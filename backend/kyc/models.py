@@ -1,0 +1,197 @@
+import os
+import uuid
+
+from django.conf import settings
+from django.contrib.auth.models import AbstractUser
+from django.core.exceptions import ValidationError
+from django.db import models
+from django.utils import timezone
+
+
+class User(AbstractUser):
+    """Custom user with a role for the KYC workflow."""
+
+    class Role(models.TextChoices):
+        APPLICANT = "applicant", "Applicant"
+        REVIEWER = "reviewer", "Reviewer"
+        ADMIN = "admin", "Admin"
+
+    email = models.EmailField(unique=True)
+    role = models.CharField(
+        max_length=20, choices=Role.choices, default=Role.APPLICANT
+    )
+
+    USERNAME_FIELD = "email"
+    REQUIRED_FIELDS = ["username"]
+
+    def __str__(self):
+        return f"{self.email} ({self.role})"
+
+    @property
+    def is_reviewer(self):
+        return self.role in (self.Role.REVIEWER, self.Role.ADMIN)
+
+
+class KYCApplication(models.Model):
+    """A single KYC verification application submitted by an applicant."""
+
+    class Status(models.TextChoices):
+        DRAFT = "draft", "Draft"
+        SUBMITTED = "submitted", "Submitted"
+        UNDER_REVIEW = "under_review", "Under Review"
+        APPROVED = "approved", "Approved"
+        REJECTED = "rejected", "Rejected"
+        RESUBMISSION_REQUESTED = "resubmission_requested", "Resubmission Requested"
+
+    class IDType(models.TextChoices):
+        PASSPORT = "passport", "Passport"
+        NATIONAL_ID = "national_id", "National ID"
+        DRIVERS_LICENSE = "drivers_license", "Driver's License"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    applicant = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="applications",
+    )
+    status = models.CharField(
+        max_length=30, choices=Status.choices, default=Status.DRAFT
+    )
+
+    # Personal information
+    full_name = models.CharField(max_length=255)
+    date_of_birth = models.DateField()
+    nationality = models.CharField(max_length=100)
+    phone = models.CharField(max_length=30)
+
+    # Address
+    address_line1 = models.CharField(max_length=255)
+    address_line2 = models.CharField(max_length=255, blank=True)
+    city = models.CharField(max_length=100)
+    state = models.CharField(max_length=100)
+    postal_code = models.CharField(max_length=20)
+    country = models.CharField(max_length=100)
+
+    # Identity document
+    id_type = models.CharField(max_length=30, choices=IDType.choices)
+    id_number = models.CharField(max_length=100)
+    id_expiry = models.DateField(null=True, blank=True)
+
+    # Review metadata
+    reviewer = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reviewed_applications",
+    )
+    review_notes = models.TextField(blank=True)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    submitted_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"KYC {self.id} — {self.full_name} [{self.status}]"
+
+    # ---- state machine helpers ----
+    def submit(self):
+        if self.status not in (self.Status.DRAFT, self.Status.RESUBMISSION_REQUESTED):
+            raise ValidationError("Only draft or resubmission-requested applications can be submitted.")
+        self.status = self.Status.SUBMITTED
+        self.submitted_at = timezone.now()
+        self.save(update_fields=["status", "submitted_at", "updated_at"])
+
+    def apply_review(self, *, reviewer, decision, notes=""):
+        """Apply a reviewer decision and record audit metadata."""
+        if self.status not in (self.Status.SUBMITTED, self.Status.UNDER_REVIEW):
+            raise ValidationError("Application is not in a reviewable state.")
+        mapping = {
+            "approve": self.Status.APPROVED,
+            "reject": self.Status.REJECTED,
+            "request_resubmission": self.Status.RESUBMISSION_REQUESTED,
+        }
+        if decision not in mapping:
+            raise ValidationError(f"Invalid decision: {decision}")
+        self.status = mapping[decision]
+        self.reviewer = reviewer
+        self.review_notes = notes
+        self.reviewed_at = timezone.now()
+        self.save(
+            update_fields=["status", "reviewer", "review_notes", "reviewed_at", "updated_at"]
+        )
+
+
+def document_upload_path(instance, filename):
+    ext = os.path.splitext(filename)[1].lower()
+    return f"documents/{instance.application_id}/{uuid.uuid4().hex}{ext}"
+
+
+class Document(models.Model):
+    """A file uploaded in support of a KYC application."""
+
+    class DocType(models.TextChoices):
+        ID_PROOF = "id_proof", "ID Proof"
+        ADDRESS_PROOF = "address_proof", "Address Proof"
+        SELFIE = "selfie", "Selfie"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    application = models.ForeignKey(
+        KYCApplication, on_delete=models.CASCADE, related_name="documents"
+    )
+    doc_type = models.CharField(max_length=30, choices=DocType.choices)
+    file = models.FileField(upload_to=document_upload_path)
+    original_filename = models.CharField(max_length=255)
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-uploaded_at"]
+
+    def __str__(self):
+        return f"{self.doc_type}: {self.original_filename}"
+
+    def clean(self):
+        ext = os.path.splitext(self.original_filename)[1].lower()
+        allowed = getattr(settings, "ALLOWED_UPLOAD_EXTENSIONS", [])
+        if allowed and ext not in allowed:
+            raise ValidationError(f"File type '{ext}' is not allowed.")
+        max_bytes = getattr(settings, "MAX_UPLOAD_SIZE_MB", 5) * 1024 * 1024
+        if self.file and self.file.size > max_bytes:
+            raise ValidationError("File exceeds the maximum allowed size.")
+
+
+class AuditLog(models.Model):
+    """Immutable record of every action taken on an application."""
+
+    class Action(models.TextChoices):
+        CREATED = "created", "Created"
+        UPDATED = "updated", "Updated"
+        SUBMITTED = "submitted", "Submitted"
+        DOCUMENT_UPLOADED = "document_uploaded", "Document Uploaded"
+        APPROVED = "approved", "Approved"
+        REJECTED = "rejected", "Rejected"
+        RESUBMISSION_REQUESTED = "resubmission_requested", "Resubmission Requested"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    application = models.ForeignKey(
+        KYCApplication, on_delete=models.CASCADE, related_name="audit_logs"
+    )
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="audit_events",
+    )
+    action = models.CharField(max_length=30, choices=Action.choices)
+    detail = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.action} on {self.application_id} by {self.actor}"
