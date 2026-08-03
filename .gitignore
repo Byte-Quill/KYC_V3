@@ -37,3 +37,10 @@ htmlcov/
 .pytest_cache/
 .mypy_cache/
 coverage/
+maddies/backend/.venv/
+maddies/backend/db.sqlite3
+maddies/backend/media/
+maddies/**/__pycache__/
+maddies/frontend/node_modules/
+maddies/frontend/dist/
+*.tsbuildinfo
