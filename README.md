@@ -47,22 +47,22 @@ npm run dev                       # http://127.0.0.1:5173
 
 ## Demo accounts (after `seed_demo`)
 
-| Role      | Email               | Password    |
-|-----------|---------------------|-------------|
-| Admin     | admin@kyc.local     | Admin@123   |
-| Reviewer  | reviewer@kyc.local  | Review@123  |
-| Applicant | user@kyc.local      | User@123    |
+| Role      | Email              | Password   |
+| --------- | ------------------ | ---------- |
+| Admin     | admin@kyc.local    | Admin@123  |
+| Reviewer  | reviewer@kyc.local | Review@123 |
+| Applicant | user@kyc.local     | User@123   |
 
 ## API overview
 
-| Method | Endpoint                          | Description                  |
-|--------|-----------------------------------|------------------------------|
-| POST   | /api/auth/register/               | Register applicant           |
-| POST   | /api/auth/token/                  | Obtain JWT                   |
-| GET    | /api/auth/me/                     | Current user profile         |
-| GET/POST | /api/applications/              | List / create applications   |
-| GET    | /api/applications/{id}/           | Application detail           |
-| POST   | /api/applications/{id}/submit/    | Submit for review            |
-| POST   | /api/applications/{id}/documents/ | Upload document              |
-| POST   | /api/applications/{id}/review/    | Reviewer decision            |
-| GET    | /api/applications/{id}/audit/     | Audit trail                  |
+| Method   | Endpoint                          | Description                |
+| -------- | --------------------------------- | -------------------------- |
+| POST     | /api/auth/register/               | Register applicant         |
+| POST     | /api/auth/token/                  | Obtain JWT                 |
+| GET      | /api/auth/me/                     | Current user profile       |
+| GET/POST | /api/applications/                | List / create applications |
+| GET      | /api/applications/{id}/           | Application detail         |
+| POST     | /api/applications/{id}/submit/    | Submit for review          |
+| POST     | /api/applications/{id}/documents/ | Upload document            |
+| POST     | /api/applications/{id}/review/    | Reviewer decision          |
+| GET      | /api/applications/{id}/audit/     | Audit trail                |
