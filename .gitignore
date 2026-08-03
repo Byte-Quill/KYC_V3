@@ -3,10 +3,7 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .venv/
-venv/otifications - Email/in-app notifications on status changes
-Q: Which database should it use?
-A: SQLite (recommended for dev) - Zero-config, good for local dev and demo
-I'll build a full-stack KYC system
+venv/
 env/
 *.sqlite3
 db.sqlite3
