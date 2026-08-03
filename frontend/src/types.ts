@@ -1,0 +1,74 @@
+export type Role = "applicant" | "reviewer" | "admin";
+
+export interface User {
+  id: number;
+  email: string;
+  username: string;
+  first_name: string;
+  last_name: string;
+  role: Role;
+}
+
+export type ApplicationStatus =
+  | "draft"
+  | "submitted"
+  | "under_review"
+  | "approved"
+  | "rejected"
+  | "resubmission_requested";
+
+export interface Document {
+  id: string;
+  doc_type: "id_proof" | "address_proof" | "selfie";
+  file: string;
+  original_filename: string;
+  uploaded_at: string;
+}
+
+export interface KYCApplication {
+  id: string;
+  applicant_email: string;
+  status: ApplicationStatus;
+  full_name: string;
+  date_of_birth: string;
+  nationality: string;
+  phone: string;
+  address_line1: string;
+  address_line2: string;
+  city: string;
+  state: string;
+  postal_code: string;
+  country: string;
+  id_type: "passport" | "national_id" | "drivers_license";
+  id_number: string;
+  id_expiry: string | null;
+  reviewer_email: string | null;
+  review_notes: string;
+  reviewed_at: string | null;
+  documents: Document[];
+  created_at: string;
+  updated_at: string;
+  submitted_at: string | null;
+}
+
+export interface AuditEntry {
+  id: string;
+  action: string;
+  detail: string;
+  actor_email: string | null;
+  created_at: string;
+}
+
+export type ApplicationPayload = Omit<
+  KYCApplication,
+  | "id"
+  | "applicant_email"
+  | "status"
+  | "reviewer_email"
+  | "review_notes"
+  | "reviewed_at"
+  | "documents"
+  | "created_at"
+  | "updated_at"
+  | "submitted_at"
+>;
