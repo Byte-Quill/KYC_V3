@@ -8,6 +8,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.views import TokenObtainPairView
 
+from . import supabase_client
 from .models import AuditLog, Document, KYCApplication
 from .permissions import IsOwnerOrReviewer, IsReviewer
 from .serializers import (
@@ -26,6 +27,17 @@ def log_action(application, actor, action, detail=""):
     AuditLog.objects.create(
         application=application, actor=actor, action=action, detail=detail
     )
+    # Broadcast status changes to Supabase Realtime so the frontend can update
+    # live without polling. No-op when Supabase is not configured.
+    if action in (
+        AuditLog.Action.SUBMITTED,
+        AuditLog.Action.APPROVED,
+        AuditLog.Action.REJECTED,
+        AuditLog.Action.RESUBMISSION_REQUESTED,
+    ):
+        supabase_client.broadcast_status_change(
+            str(application.id), application.status, detail
+        )
 
 
 class RegisterView(generics.CreateAPIView):
@@ -107,6 +119,20 @@ class KYCApplicationViewSet(viewsets.ModelViewSet):
         except DjangoValidationError as exc:
             raise ValidationError(exc.message_dict if hasattr(exc, "message_dict") else exc.messages)
         document.save()
+
+        # Mirror the file to Supabase Storage when configured. The local copy
+        # remains the source of truth for the FileField; Supabase provides the
+        # durable, CDN-backed copy and public/signed URLs.
+        if supabase_client.is_configured():
+            file_obj.seek(0)
+            storage_path = f"{application.id}/{document.id}_{file_obj.name}"
+            uploaded = supabase_client.upload_document(
+                storage_path, file_obj.read(), file_obj.content_type or "application/octet-stream"
+            )
+            if uploaded:
+                document.storage_path = uploaded
+                document.save(update_fields=["storage_path"])
+
         log_action(
             application,
             request.user,

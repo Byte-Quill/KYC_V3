@@ -159,6 +159,8 @@ class Document(models.Model):
     doc_type = models.CharField(max_length=30, choices=DocType.choices)
     file = models.FileField(upload_to=document_upload_path)
     original_filename = models.CharField(max_length=255)
+    # Path of the mirrored copy in Supabase Storage, when configured.
+    storage_path = models.CharField(max_length=512, blank=True)
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
