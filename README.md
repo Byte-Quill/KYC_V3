@@ -4,7 +4,9 @@ A full-stack KYC (Know Your Customer) / application verification system.
 
 ## Stack
 
-- **Backend:** Django 5 + Django REST Framework, JWT auth, SQLite (dev)
+- **Backend:** Django 5 + Django REST Framework, JWT auth
+- **Database:** PostgreSQL via Supabase (SQLite fallback for zero-config dev)
+- **Platform:** Supabase — Postgres, Auth, Storage, Realtime, Edge Functions, pgvector
 - **Frontend:** React 18 + TypeScript + Vite + Tailwind CSS
 - **Version control:** Git (commit after each step)
 
@@ -22,6 +24,7 @@ A full-stack KYC (Know Your Customer) / application verification system.
 ```
 backend/    Django project + kyc app
 frontend/   React + TS + Tailwind SPA
+supabase/   Edge functions + Supabase setup guide
 ```
 
 ## Quick start
@@ -32,10 +35,23 @@ frontend/   React + TS + Tailwind SPA
 cd backend
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+cp .env.example .env              # fill in Supabase credentials (optional for SQLite dev)
 python manage.py migrate
 python manage.py seed_demo        # creates demo users + sample data
 python manage.py runserver        # http://127.0.0.1:8000
 ```
+
+### Supabase (Postgres, Storage, Realtime, Edge Functions)
+
+See [supabase/README.md](supabase/README.md) for full setup. In short:
+
+1. Create a Supabase project and copy its URL/keys into `backend/.env`.
+2. Set `DATABASE_URL` to the Supabase Postgres connection string.
+3. `python manage.py migrate` then `python manage.py migrate_to_postgres` to move existing SQLite data.
+4. Enable `vector` extension, create the `kyc-documents` storage bucket, deploy the edge function.
+
+When `DATABASE_URL` is unset the backend falls back to local SQLite, so the app
+runs with zero external services for development.
 
 ### Frontend
 
