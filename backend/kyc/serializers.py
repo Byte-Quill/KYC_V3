@@ -1,9 +1,20 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 from .models import AuditLog, Document, KYCApplication
 
 User = get_user_model()
+
+
+class EmailTokenObtainPairSerializer(TokenObtainPairSerializer):
+    """JWT serializer that authenticates with email instead of username."""
+
+    username_field = "email"
+
+    def validate(self, attrs):
+        attrs["username"] = attrs.get("email", "")
+        return super().validate(attrs)
 
 
 class RegisterSerializer(serializers.ModelSerializer):

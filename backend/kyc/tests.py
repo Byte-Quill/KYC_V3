@@ -46,6 +46,20 @@ class AuthTests(APITestCase):
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         self.assertIn("access", res.data)
 
+    def test_login_is_rate_limited(self):
+        for _ in range(100):
+            res = self.client.post(
+                "/api/auth/token/",
+                {"email": "unknown@kyc.local", "password": "wrong-password"},
+            )
+            self.assertIn(res.status_code, (status.HTTP_401_UNAUTHORIZED, status.HTTP_429_TOO_MANY_REQUESTS))
+
+        res = self.client.post(
+            "/api/auth/token/",
+            {"email": "unknown@kyc.local", "password": "wrong-password"},
+        )
+        self.assertEqual(res.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
+
     def test_me_requires_auth(self):
         self.assertEqual(self.client.get("/api/auth/me/").status_code, status.HTTP_401_UNAUTHORIZED)
 

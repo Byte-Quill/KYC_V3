@@ -2,21 +2,17 @@ import type { ApplicationPayload, AuditEntry, KYCApplication, User } from "./typ
 
 const BASE = "/api";
 
-let accessToken: string | null = localStorage.getItem("access");
-let refreshToken: string | null = localStorage.getItem("refresh");
+let accessToken: string | null = null;
+let refreshToken: string | null = null;
 
 export function setTokens(access: string, refresh: string) {
   accessToken = access;
   refreshToken = refresh;
-  localStorage.setItem("access", access);
-  localStorage.setItem("refresh", refresh);
 }
 
 export function clearTokens() {
   accessToken = null;
   refreshToken = null;
-  localStorage.removeItem("access");
-  localStorage.removeItem("refresh");
 }
 
 export function isAuthenticated() {

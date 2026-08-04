@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import generics, status, viewsets
 from rest_framework.decorators import action
@@ -6,6 +7,7 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import BaseThrottle
 from rest_framework_simplejwt.views import TokenObtainPairView
 
 from . import supabase_client
@@ -14,6 +16,7 @@ from .permissions import IsOwnerOrReviewer, IsReviewer
 from .serializers import (
     AuditLogSerializer,
     DocumentSerializer,
+    EmailTokenObtainPairSerializer,
     KYCApplicationSerializer,
     RegisterSerializer,
     ReviewSerializer,
@@ -21,6 +24,24 @@ from .serializers import (
 )
 
 User = get_user_model()
+
+
+class LoginThrottle(BaseThrottle):
+    def allow_request(self, request, view):
+        ident = self.get_ident(request)
+        key = f"login-throttle:{ident}"
+        count = cache.get(key, 0)
+        if count >= 100:
+            return False
+        cache.set(key, count + 1, 60 * 60)
+        return True
+
+
+class EmailTokenObtainPairView(TokenObtainPairView):
+    """JWT token view that accepts email/password credentials."""
+
+    serializer_class = EmailTokenObtainPairSerializer
+    throttle_classes = [LoginThrottle]
 
 
 def log_action(application, actor, action, detail=""):
@@ -38,6 +59,10 @@ def log_action(application, actor, action, detail=""):
         supabase_client.broadcast_status_change(
             str(application.id), application.status, detail
         )
+
+
+class LoginView(TokenObtainPairView):
+    throttle_classes = (LoginThrottle,)
 
 
 class RegisterView(generics.CreateAPIView):
