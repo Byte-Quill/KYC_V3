@@ -55,14 +55,12 @@ async function request<T>(
   options: RequestInit = {},
   retry = true
 ): Promise<T> {
-  const headers: Record<string, string> = {
-    ...(options.headers as Record<string, string>),
-  };
+  const headers = new Headers(options.headers);
   if (!(options.body instanceof FormData)) {
-    headers["Content-Type"] = "application/json";
+    headers.set("Content-Type", "application/json");
   }
   if (accessToken) {
-    headers["Authorization"] = `Bearer ${accessToken}`;
+    headers.set("Authorization", `Bearer ${accessToken}`);
   }
 
   const res = await fetch(`${BASE}${path}`, { ...options, headers });

@@ -4,10 +4,10 @@ A full-stack KYC (Know Your Customer) / application verification system.
 
 ## Stack
 
-- **Backend:** Django 5 + Django REST Framework, JWT auth
+- **Backend:** Django 5.2 + Django REST Framework 3.16, JWT auth
 - **Database:** PostgreSQL via Supabase (SQLite fallback for zero-config dev)
 - **Platform:** Supabase — Postgres, Auth, Storage, Realtime, Edge Functions, pgvector
-- **Frontend:** React 18 + TypeScript + Vite + Tailwind CSS
+- **Frontend:** React 19 + TypeScript + Vite 6 + Tailwind CSS
 - **Version control:** Git (commit after each step)
 
 ## Features

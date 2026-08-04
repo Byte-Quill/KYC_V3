@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
 import * as api from "./api";
@@ -18,15 +18,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!api.isAuthenticated()) {
-      setLoading(false);
-      return;
-    }
-    api
-      .fetchMe()
-      .then(setUser)
-      .catch(() => api.clearTokens())
-      .finally(() => setLoading(false));
+    const initializeAuth = async () => {
+      if (!api.isAuthenticated()) {
+        setUser(null);
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const currentUser = await api.fetchMe();
+        setUser(currentUser);
+      } catch {
+        api.clearTokens();
+        setUser(null);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    void initializeAuth();
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {
@@ -40,11 +50,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }, []);
 
-  return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
-      {children}
-    </AuthContext.Provider>
+  const value = useMemo(
+    () => ({ user, loading, login, logout }),
+    [user, loading, login, logout]
   );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {
