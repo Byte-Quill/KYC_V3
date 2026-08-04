@@ -1,6 +1,7 @@
 from datetime import date
 
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework import status
 from rest_framework.test import APITestCase
@@ -33,6 +34,9 @@ def make_user(email, role, password="Passw0rd!"):
 
 
 class AuthTests(APITestCase):
+    def setUp(self):
+        cache.clear()
+
     def test_register_and_login(self):
         res = self.client.post(
             "/api/auth/register/",
