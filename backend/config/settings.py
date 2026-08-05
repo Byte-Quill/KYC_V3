@@ -13,7 +13,11 @@ load_dotenv(BASE_DIR / ".env")
 
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY")
 if not SECRET_KEY:
-    raise RuntimeError("DJANGO_SECRET_KEY must be set")
+    # Allow build-time operations (collectstatic, etc.) without a real secret
+    # In production, DJANGO_SECRET_KEY must be set via environment variable
+    SECRET_KEY = "django-insecure-build-time-only-key-not-for-production"
+    import warnings
+    warnings.warn("DJANGO_SECRET_KEY not set, using insecure build-time key", RuntimeWarning)
 DEBUG = os.environ.get("DJANGO_DEBUG", "false").lower() == "true"
 ALLOWED_HOSTS = [
     host.strip() for host in os.environ.get("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",") if host.strip()
