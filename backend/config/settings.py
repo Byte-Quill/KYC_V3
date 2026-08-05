@@ -70,13 +70,11 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "config.wsgi.application"
 
-# Database: PostgreSQL (Supabase) via DATABASE_URL, falling back to SQLite for
-# zero-config local development. Set DATABASE_URL to your Supabase Postgres
-# connection string, e.g.
+# Database: PostgreSQL (Supabase) via DATABASE_URL.
+# Set DATABASE_URL to your Supabase Postgres connection string, e.g.
 #   postgres://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres
 DATABASES = {
     "default": dj_database_url.config(
-        default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}",
         conn_max_age=600,
         conn_health_checks=True,
     )
