@@ -41,9 +41,6 @@ COPY --from=frontend-builder /app/frontend/dist ./staticfiles/
 # Create media directory
 RUN mkdir -p /app/media/documents
 
-# Collect static files
-RUN python manage.py collectstatic --noinput
-
 # Create non-root user
 RUN adduser --disabled-password --gecos '' appuser
 RUN chown -R appuser:appuser /app
