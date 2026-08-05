@@ -132,6 +132,11 @@ if not DEBUG:
     if custom_domain:
         CORS_ALLOWED_ORIGINS.append(f"https://{custom_domain}")
 
+# Extra CORS origins from env (e.g. Vercel frontend URL)
+extra_cors = os.environ.get("CORS_ALLOWED_ORIGINS", "")
+if extra_cors:
+    CORS_ALLOWED_ORIGINS.extend([o.strip() for o in extra_cors.split(",") if o.strip()])
+
 # Upload constraints
 MAX_UPLOAD_SIZE_MB = 5
 ALLOWED_UPLOAD_EXTENSIONS = [".jpg", ".jpeg", ".png", ".pdf"]

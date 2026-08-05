@@ -43,10 +43,24 @@ class UserSerializer(serializers.ModelSerializer):
 
 
 class DocumentSerializer(serializers.ModelSerializer):
+    file = serializers.SerializerMethodField()
+
     class Meta:
         model = Document
         fields = ("id", "doc_type", "file", "original_filename", "uploaded_at")
         read_only_fields = ("id", "uploaded_at")
+
+    def get_file(self, obj):
+        if obj.storage_path:
+            from kyc.supabase_client import get_public_url
+            url = get_public_url(obj.storage_path)
+            if url:
+                return url
+        # Fallback to local file URL (requires request in context)
+        request = self.context.get("request")
+        if obj.file and request:
+            return request.build_absolute_uri(obj.file.url)
+        return obj.file.url if obj.file else None
 
 
 class AuditLogSerializer(serializers.ModelSerializer):

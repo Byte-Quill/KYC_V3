@@ -1,6 +1,8 @@
 import type { ApplicationPayload, AuditEntry, KYCApplication, User } from "./types";
 
-const BASE = "/api";
+const BASE = import.meta.env.VITE_API_URL
+  ? `${import.meta.env.VITE_API_URL.replace(/\/$/, "")}/api`
+  : "/api";
 
 let accessToken: string | null = null;
 let refreshToken: string | null = null;
