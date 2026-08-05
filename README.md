@@ -11,26 +11,31 @@ A full-stack KYC (Know Your Customer) / application verification system built wi
 │                            KYC-V3 SYSTEM ARCHITECTURE                       │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│  ┌──────────────┐         HTTPS/REST          ┌────────────────────────┐   │
-│  │   FRONTEND   │ ◄─────────────────────────► │       BACKEND          │   │
-│  │  (Vercel)    │                             │      (Render)          │   │
-│  │              │   JWT in Authorization      │                        │   │
-│  │  React 19    │   Header + Refresh Token    │  Django 5.2 + DRF      │   │
-│  │  TypeScript  │                             │  SimpleJWT Auth        │   │
-│  │  Vite 6      │   /api/* endpoints          │  WhiteNoise Static     │   │
-│  │  Tailwind    │                             │  Gunicorn WSGI         │   │
-│  └──────────────┘                             └───────────┬────────────┘   │
-│                                                          │                │
-│                    ┌─────────────────────────────────────┼────────────┐   │
-│                    │              SUPABASE               │            │   │
-│                    │  ┌──────────┐ ┌─────────┐ ┌───────┐ │ ┌────────┐ │   │
-│                    │  │ Postgres │ │ Storage │ │Realtime│ │ │ Edge   │ │   │
-│                    │  │(Pooler)  │ │(Bucket) │ │Broadcast│ │ │Functions│ │   │
-│                    │  └──────────┘ └─────────┘ └───────┘ │ └────────┘ │   │
-│                    └─────────────────────────────────────┴────────────┘   │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                         VERCEL (Full-Stack)                         │   │
+│  │  ┌──────────────┐         ┌─────────────────────────────────────┐   │   │
+│  │  │   FRONTEND   │ ◄─────► │           BACKEND                   │   │   │
+│  │  │  (Static)    │  /api/* │      (Serverless Function)          │   │   │
+│  │  │              │         │                                     │   │   │
+│  │  │  React 19    │         │  Django 5.2 + DRF                   │   │   │
+│  │  │  TypeScript  │         │  SimpleJWT Auth                     │   │   │
+│  │  │  Vite 6      │         │  WhiteNoise Static                  │   │   │
+│  │  │  Tailwind    │         │  Python 3.12 Runtime                │   │   │
+│  │  └──────────────┘         └─────────────────────────────────────┘   │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                    │                                       │
+│                    ┌───────────────┼───────────────┐                       │
+│                    │              SUPABASE         │                       │
+│                    │  ┌──────────┐ ┌─────────┐ ┌───┴───┐ ┌────────┐       │
+│                    │  │ Postgres │ │ Storage │ │Realtime│ │ Edge   │       │
+│                    │  │(Pooler)  │ │(Bucket) │ │Broadcast│ │Functions│       │
+│                    │  └──────────┘ └─────────┘ └───────┘ └────────┘       │
+│                    └─────────────────────────────────────────────────────┘   │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
+
+**Alternative:** Backend on Render (container), Frontend on Vercel (static) — see Deployment section.
 
 ---
 
@@ -45,7 +50,7 @@ A full-stack KYC (Know Your Customer) / application verification system built wi
 | **Realtime**       | Supabase Realtime (`kyc-status` channel)   | Live status updates                    |
 | **Edge Functions** | Supabase Edge Functions (Deno)             | Embedding generation for vector search |
 | **Frontend**       | React 19, TypeScript, Vite 6, Tailwind CSS | SPA, deployed on Vercel                |
-| **Deployment**     | Render (backend), Vercel (frontend)        | Free-tier hosting                      |
+| **Deployment**     | Vercel (full-stack) or Render + Vercel     | Serverless / container hosting         |
 
 ---
 
@@ -84,7 +89,8 @@ KYC-V3/
 │   ├── functions/
 │   │   └── generate-embedding/ # Edge Function: OpenAI embeddings → pgvector
 │   └── README.md               # Supabase setup guide
-├── render.yaml                 # Render Blueprint (backend only)
+├── render.yaml                 # Render Blueprint (backend only, Option B)
+├── vercel.json                 # Vercel multi-service config (Option A)
 ├── Dockerfile                  # Multi-stage (Node + Python) for container deploy
 └── README.md                   # This file
 ```
@@ -313,12 +319,49 @@ npm run dev                         # http://localhost:5173
 
 ## Deployment
 
-### Backend → Render (Free Tier)
+### Option A: Vercel (Full-Stack, Recommended)
 
-1. Push repo to GitHub
-2. Render Dashboard → **New → Blueprint** → select repo
-3. Blueprint reads `render.yaml` (backend service only)
-4. **Environment Variables** (set in Render dashboard):
+Deploy both frontend and backend on Vercel using `vercel.json`:
+
+1. **Push repo to GitHub**
+2. **Vercel → Import Project** → select repo
+3. **Root Directory**: Leave as root (`.`)
+4. **Framework**: Auto-detected (Vite + Django)
+5. **Environment Variables** (set in Vercel dashboard):
+
+   ```
+   # Backend
+   DJANGO_SECRET_KEY=<50+ char random string>
+   DJANGO_DEBUG=false
+   DJANGO_ALLOWED_HOSTS=.vercel.app
+   DJANGO_CSRF_TRUSTED_ORIGINS=https://your-app.vercel.app
+   DATABASE_URL=postgresql://postgres.<ref>:<pwd>@aws-0-<region>.pooler.supabase.com:6543/postgres
+   SUPABASE_URL=https://<ref>.supabase.co
+   SUPABASE_ANON_KEY=<anon-key>
+   SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
+   SUPABASE_STORAGE_BUCKET=kyc-documents
+   CORS_ALLOWED_ORIGINS=https://your-app.vercel.app
+
+   # Frontend
+   VITE_API_URL=https://your-app.vercel.app
+   ```
+
+6. Deploy → URL: `https://your-app.vercel.app`
+
+**How it works:**
+
+- `vercel.json` defines two services: `frontend` (Vite) and `backend` (Django)
+- Rewrites route `/api/*` to backend, everything else to frontend
+- Backend runs as Vercel Serverless Function (Python)
+- Frontend builds to static files
+
+### Option B: Render (Backend) + Vercel (Frontend)
+
+**Backend → Render:**
+
+1. Render Dashboard → **New → Blueprint** → select repo
+2. Blueprint reads `render.yaml` (backend service only)
+3. **Environment Variables** (set in Render dashboard):
    ```
    DATABASE_URL=postgresql://postgres.<ref>:<pwd>@aws-0-<region>.pooler.supabase.com:6543/postgres
    SUPABASE_URL=https://<ref>.supabase.co
@@ -331,9 +374,9 @@ npm run dev                         # http://localhost:5173
    DJANGO_DEBUG=false
    DJANGO_ALLOWED_HOSTS=.onrender.com
    ```
-5. Deploy → URL: `https://kyc-backend.onrender.com`
+4. Deploy → URL: `https://kyc-backend.onrender.com`
 
-### Frontend → Vercel
+**Frontend → Vercel:**
 
 1. Vercel → **Import Project** → same repo
 2. **Root Directory**: `frontend`
