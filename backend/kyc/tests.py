@@ -6,7 +6,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from .models import AuditLog, KYCApplication
+from .models import AuditLog, Document, KYCApplication
 
 User = get_user_model()
 
@@ -51,7 +51,7 @@ class AuthTests(APITestCase):
         self.assertIn("access", res.data)
 
     def test_login_is_rate_limited(self):
-        for _ in range(100):
+        for _ in range(10):
             res = self.client.post(
                 "/api/auth/token/",
                 {"email": "unknown@kyc.local", "password": "wrong-password"},
@@ -61,6 +61,19 @@ class AuthTests(APITestCase):
         res = self.client.post(
             "/api/auth/token/",
             {"email": "unknown@kyc.local", "password": "wrong-password"},
+        )
+        self.assertEqual(res.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
+
+    def test_register_is_rate_limited(self):
+        for i in range(5):
+            res = self.client.post(
+                "/api/auth/register/",
+                {"email": f"spam{i}@kyc.local", "username": f"spam{i}", "password": "Str0ngPass!"},
+            )
+            self.assertIn(res.status_code, (status.HTTP_201_CREATED, status.HTTP_429_TOO_MANY_REQUESTS))
+        res = self.client.post(
+            "/api/auth/register/",
+            {"email": "spam6@kyc.local", "username": "spam6", "password": "Str0ngPass!"},
         )
         self.assertEqual(res.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
 
@@ -149,7 +162,29 @@ class ApplicationFlowTests(APITestCase):
         res = self.client.get(f"/api/applications/{app_id}/")
         self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
         res = self.client.get("/api/applications/")
-        self.assertEqual(len(res.data), 0)
+        self.assertEqual(len(res.data["results"]), 0)
+
+    def test_list_is_paginated(self):
+        self.auth(self.applicant)
+        for _ in range(25):
+            self.create_app()
+        res = self.client.get("/api/applications/")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data["count"], 25)
+        self.assertEqual(len(res.data["results"]), 20)
+        self.assertIsNotNone(res.data["next"])
+        res2 = self.client.get("/api/applications/?page=2")
+        self.assertEqual(len(res2.data["results"]), 5)
+
+    def test_reviewer_cannot_patch_applicant_fields(self):
+        self.auth(self.applicant)
+        app_id = self.create_app()
+        self.auth(self.reviewer)
+        res = self.client.patch(
+            f"/api/applications/{app_id}/",
+            {"full_name": "Tampered Name"},
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_review_queue_only_for_reviewers(self):
         self.auth(self.applicant)
@@ -168,6 +203,29 @@ class ApplicationFlowTests(APITestCase):
         res = self.client.post(
             f"/api/applications/{app_id}/documents/",
             {"doc_type": "id_proof", "file": file},
+            format="multipart",
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_content_mismatch_rejected(self):
+        """An executable renamed to .pdf must be rejected by content sniffing."""
+        self.auth(self.applicant)
+        app_id = self.create_app()
+        file = SimpleUploadedFile("fake.pdf", b"MZ\x90\x00 executable", content_type="application/pdf")
+        res = self.client.post(
+            f"/api/applications/{app_id}/documents/",
+            {"doc_type": "id_proof", "file": file},
+            format="multipart",
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_oversized_upload_rejected(self):
+        self.auth(self.applicant)
+        app_id = self.create_app()
+        big = SimpleUploadedFile("big.pdf", b"%PDF-1.4 " + b"0" * (6 * 1024 * 1024), content_type="application/pdf")
+        res = self.client.post(
+            f"/api/applications/{app_id}/documents/",
+            {"doc_type": "id_proof", "file": big},
             format="multipart",
         )
         self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)

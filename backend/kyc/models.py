@@ -13,6 +13,27 @@ except ImportError:  # pragma: no cover - pgvector optional at import time
     VectorField = None
 
 
+def validate_file_content(file_obj):
+    """Validate the file's content matches its extension (magic-byte sniff).
+
+    Extension checks alone are bypassed by renaming an executable to .pdf.
+    """
+    ext = os.path.splitext(file_obj.name)[1].lower()
+    head = file_obj.read(16)
+    file_obj.seek(0)
+    signatures = {
+        ".jpg": [b"\xff\xd8\xff"],
+        ".jpeg": [b"\xff\xd8\xff"],
+        ".png": [b"\x89PNG\r\n\x1a\n"],
+        ".pdf": [b"%PDF-"],
+    }
+    allowed = signatures.get(ext)
+    if not allowed:
+        return
+    if not any(head.startswith(sig) for sig in allowed):
+        raise ValidationError(f"File content does not match the '{ext}' extension.")
+
+
 class User(AbstractUser):
     """Custom user with a role for the KYC workflow."""
 
@@ -58,9 +79,10 @@ class KYCApplication(models.Model):
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="applications",
+        db_index=True,
     )
     status = models.CharField(
-        max_length=30, choices=Status.choices, default=Status.DRAFT
+        max_length=30, choices=Status.choices, default=Status.DRAFT, db_index=True
     )
 
     # Personal information
@@ -107,12 +129,17 @@ class KYCApplication(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["applicant", "status"], name="kyc_app_applicant_status_idx"),
+        ]
 
     def __str__(self):
         return f"KYC {self.id} — {self.full_name} [{self.status}]"
 
     # ---- state machine helpers ----
     def submit(self):
+        # Note: callers must fetch this row via select_for_update() inside a
+        # transaction so concurrent submits cannot both pass the status check.
         if self.status not in (self.Status.DRAFT, self.Status.RESUBMISSION_REQUESTED):
             raise ValidationError("Only draft or resubmission-requested applications can be submitted.")
         self.status = self.Status.SUBMITTED
@@ -121,6 +148,8 @@ class KYCApplication(models.Model):
 
     def apply_review(self, *, reviewer, decision, notes=""):
         """Apply a reviewer decision and record audit metadata."""
+        # Note: callers must fetch this row via select_for_update() inside a
+        # transaction so two concurrent reviews cannot both pass the check.
         if self.status not in (self.Status.SUBMITTED, self.Status.UNDER_REVIEW):
             raise ValidationError("Application is not in a reviewable state.")
         mapping = {
@@ -177,6 +206,8 @@ class Document(models.Model):
         max_bytes = getattr(settings, "MAX_UPLOAD_SIZE_MB", 5) * 1024 * 1024
         if self.file and self.file.size > max_bytes:
             raise ValidationError("File exceeds the maximum allowed size.")
+        if self.file:
+            validate_file_content(self.file)
 
 
 class AuditLog(models.Model):

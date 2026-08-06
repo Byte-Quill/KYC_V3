@@ -52,8 +52,8 @@ class DocumentSerializer(serializers.ModelSerializer):
 
     def get_file(self, obj):
         if obj.storage_path:
-            from kyc.supabase_client import get_public_url
-            url = get_public_url(obj.storage_path)
+            from kyc.supabase_client import create_signed_url
+            url = create_signed_url(obj.storage_path)
             if url:
                 return url
         # Fallback to local file URL (requires request in context)
@@ -118,8 +118,19 @@ class KYCApplicationSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         request = self.context.get("request")
+        if not request:
+            return attrs
+        if request.user.is_reviewer:
+            # Reviewers are read-only on applicant data; they decide via the
+            # dedicated `review` endpoint, not by patching the application.
+            editable_fields = set(attrs.keys())
+            if editable_fields:
+                raise serializers.ValidationError(
+                    f"Reviewers cannot edit application fields: {sorted(editable_fields)}"
+                )
+            return attrs
         # Applicants may only edit while the application is a draft or needs resubmission
-        if self.instance and request and not request.user.is_reviewer:
+        if self.instance:
             editable = (
                 KYCApplication.Status.DRAFT,
                 KYCApplication.Status.RESUBMISSION_REQUESTED,

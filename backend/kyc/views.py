@@ -1,13 +1,15 @@
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import transaction
+import os
 from rest_framework import generics, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.throttling import BaseThrottle
+from rest_framework.throttling import AnonRateThrottle, BaseThrottle, ScopedRateThrottle
 from rest_framework_simplejwt.views import TokenObtainPairView
 
 from . import supabase_client
@@ -27,14 +29,20 @@ User = get_user_model()
 
 
 class LoginThrottle(BaseThrottle):
+    """Per-IP login throttle keyed on X-Forwarded-For when present."""
+
     def allow_request(self, request, view):
         ident = self.get_ident(request)
         key = f"login-throttle:{ident}"
         count = cache.get(key, 0)
-        if count >= 100:
+        if count >= 10:
             return False
-        cache.set(key, count + 1, 60 * 60)
+        cache.set(key, count + 1, 60 * 10)
         return True
+
+
+class RegisterThrottle(AnonRateThrottle):
+    rate = "5/hour"
 
 
 class EmailTokenObtainPairView(TokenObtainPairView):
@@ -61,13 +69,10 @@ def log_action(application, actor, action, detail=""):
         )
 
 
-class LoginView(TokenObtainPairView):
-    throttle_classes = (LoginThrottle,)
-
-
 class RegisterView(generics.CreateAPIView):
     serializer_class = RegisterSerializer
     permission_classes = (AllowAny,)
+    throttle_classes = (RegisterThrottle,)
 
 
 class MeView(generics.RetrieveAPIView):
@@ -103,16 +108,21 @@ class KYCApplicationViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def submit(self, request, pk=None):
-        application = self.get_object()
-        if application.applicant_id != request.user.id:
-            raise ValidationError("Only the applicant can submit this application.")
-        if not application.documents.exists():
-            raise ValidationError("At least one supporting document is required before submission.")
-        try:
-            application.submit()
-        except DjangoValidationError as exc:
-            raise ValidationError(exc.message)
-        log_action(application, request.user, AuditLog.Action.SUBMITTED)
+        with transaction.atomic():
+            application = self.get_object()
+            # Row lock: two concurrent submits cannot both pass the status check.
+            application = KYCApplication.objects.select_for_update().get(pk=application.pk)
+            if application.applicant_id != request.user.id:
+                raise ValidationError("Only the applicant can submit this application.")
+            if not application.documents.exists():
+                raise ValidationError("At least one supporting document is required before submission.")
+            try:
+                application.submit()
+            except DjangoValidationError as exc:
+                raise ValidationError(exc.message)
+            log_action(application, request.user, AuditLog.Action.SUBMITTED)
+        # Fire-and-forget embedding generation for fraud/duplicate detection.
+        supabase_client.trigger_embedding(application.id)
         return Response(self.get_serializer(application).data)
 
     @action(detail=True, methods=["post"], parser_classes=(MultiPartParser, FormParser))
@@ -147,10 +157,12 @@ class KYCApplicationViewSet(viewsets.ModelViewSet):
 
         # Mirror the file to Supabase Storage when configured. The local copy
         # remains the source of truth for the FileField; Supabase provides the
-        # durable, CDN-backed copy and public/signed URLs.
+        # durable, CDN-backed copy and signed URLs. The storage key never
+        # contains the user-supplied filename.
         if supabase_client.is_configured():
             file_obj.seek(0)
-            storage_path = f"{application.id}/{document.id}_{file_obj.name}"
+            ext = os.path.splitext(file_obj.name)[1].lower()
+            storage_path = f"{application.id}/{document.id}{ext}"
             uploaded = supabase_client.upload_document(
                 storage_path, file_obj.read(), file_obj.content_type or "application/octet-stream"
             )
@@ -168,21 +180,24 @@ class KYCApplicationViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"], permission_classes=(IsAuthenticated, IsReviewer))
     def review(self, request, pk=None):
-        application = self.get_object()
         serializer = ReviewSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         decision = serializer.validated_data["decision"]
         notes = serializer.validated_data["notes"]
-        try:
-            application.apply_review(reviewer=request.user, decision=decision, notes=notes)
-        except DjangoValidationError as exc:
-            raise ValidationError(exc.message)
-        action_map = {
-            "approve": AuditLog.Action.APPROVED,
-            "reject": AuditLog.Action.REJECTED,
-            "request_resubmission": AuditLog.Action.RESUBMISSION_REQUESTED,
-        }
-        log_action(application, request.user, action_map[decision], detail=notes)
+        with transaction.atomic():
+            application = self.get_object()
+            # Row lock: two concurrent reviews cannot both pass the status check.
+            application = KYCApplication.objects.select_for_update().get(pk=application.pk)
+            try:
+                application.apply_review(reviewer=request.user, decision=decision, notes=notes)
+            except DjangoValidationError as exc:
+                raise ValidationError(exc.message)
+            action_map = {
+                "approve": AuditLog.Action.APPROVED,
+                "reject": AuditLog.Action.REJECTED,
+                "request_resubmission": AuditLog.Action.RESUBMISSION_REQUESTED,
+            }
+            log_action(application, request.user, action_map[decision], detail=notes)
         return Response(self.get_serializer(application).data)
 
     @action(detail=True, methods=["get"])

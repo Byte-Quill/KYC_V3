@@ -23,10 +23,23 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY") ?? "";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+// Shared secret that Django sends as `Authorization: Bearer <secret>`.
+// Set via: supabase secrets set FUNCTION_SECRET=<random>
+const FUNCTION_SECRET = Deno.env.get("FUNCTION_SECRET") ?? "";
 
 serve(async (req) => {
   if (req.method !== "POST") {
     return new Response("Method not allowed", { status: 405 });
+  }
+
+  // Fail closed: refuse to run when required config is missing.
+  if (!FUNCTION_SECRET || !OPENAI_API_KEY || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    return Response.json({ error: "Function is not configured" }, { status: 500 });
+  }
+
+  const auth = req.headers.get("Authorization") ?? "";
+  if (auth !== `Bearer ${FUNCTION_SECRET}`) {
+    return new Response("Unauthorized", { status: 401 });
   }
 
   const { application_id } = await req.json();

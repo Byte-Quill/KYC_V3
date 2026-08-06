@@ -1,20 +1,24 @@
-import type { ApplicationPayload, AuditEntry, KYCApplication, User } from "./types";
+import type { ApplicationPayload, AuditEntry, KYCApplication, Page, User } from "./types";
 
 const BASE = import.meta.env.VITE_API_URL
   ? `${import.meta.env.VITE_API_URL.replace(/\/$/, "")}/api`
   : "/api";
 
-let accessToken: string | null = null;
-let refreshToken: string | null = null;
+let accessToken: string | null = localStorage.getItem("access");
+let refreshToken: string | null = localStorage.getItem("refresh");
 
 export function setTokens(access: string, refresh: string) {
   accessToken = access;
   refreshToken = refresh;
+  localStorage.setItem("access", access);
+  localStorage.setItem("refresh", refresh);
 }
 
 export function clearTokens() {
   accessToken = null;
   refreshToken = null;
+  localStorage.removeItem("access");
+  localStorage.removeItem("refresh");
 }
 
 export function isAuthenticated() {
@@ -35,6 +39,10 @@ async function refreshAccess(): Promise<boolean> {
   const data = await res.json();
   accessToken = data.access;
   localStorage.setItem("access", data.access);
+  if (data.refresh) {
+    refreshToken = data.refresh;
+    localStorage.setItem("refresh", data.refresh);
+  }
   return true;
 }
 
@@ -93,7 +101,8 @@ export const register = (payload: {
 export const fetchMe = () => request<User>("/auth/me/");
 
 // ---- applications ----
-export const listApplications = () => request<KYCApplication[]>("/applications/");
+export const listApplications = (page = 1) =>
+  request<Page<KYCApplication>>(`/applications/?page=${page}`);
 export const getApplication = (id: string) => request<KYCApplication>(`/applications/${id}/`);
 export const createApplication = (payload: ApplicationPayload) =>
   request<KYCApplication>("/applications/", { method: "POST", body: JSON.stringify(payload) });
@@ -122,4 +131,5 @@ export const reviewApplication = (id: string, decision: string, notes: string) =
   });
 
 export const fetchAudit = (id: string) => request<AuditEntry[]>(`/applications/${id}/audit/`);
-export const fetchReviewQueue = () => request<KYCApplication[]>("/review-queue/");
+export const fetchReviewQueue = (page = 1) =>
+  request<Page<KYCApplication>>(`/review-queue/?page=${page}`);

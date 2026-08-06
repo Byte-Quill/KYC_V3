@@ -1,4 +1,4 @@
-from rest_framework.permissions import SAFE_METHODS, BasePermission
+from rest_framework.permissions import BasePermission
 
 
 class IsReviewer(BasePermission):
@@ -15,10 +15,3 @@ class IsOwnerOrReviewer(BasePermission):
         if request.user.is_reviewer:
             return True
         return obj.applicant_id == request.user.id
-
-
-class ReadOnlyOrReviewer(BasePermission):
-    def has_permission(self, request, view):
-        if request.method in SAFE_METHODS:
-            return True
-        return bool(request.user and request.user.is_reviewer)

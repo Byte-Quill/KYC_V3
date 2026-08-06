@@ -14,6 +14,7 @@ import logging
 from functools import lru_cache
 from typing import Any, Optional
 
+import requests
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,29 @@ except ImportError:  # pragma: no cover - supabase is an optional runtime dep
 def is_configured() -> bool:
     """True when the minimum Supabase settings are present."""
     return bool(settings.SUPABASE_URL and settings.SUPABASE_SERVICE_ROLE_KEY)
+
+
+def trigger_embedding(application_id: str) -> bool:
+    """Ask the Supabase Edge Function to (re)generate the application embedding.
+
+    The Edge Function is authenticated with a shared secret so only our backend
+    can invoke it. No-op when the secret is unset.
+    """
+    secret = getattr(settings, "SUPABASE_FUNCTION_SECRET", "")
+    url = getattr(settings, "SUPABASE_FUNCTIONS_URL", "")
+    if not secret or not url:
+        return False
+    try:
+        res = requests.post(
+            f"{url}/generate-embedding",
+            json={"application_id": str(application_id)},
+            headers={"Authorization": f"Bearer {secret}"},
+            timeout=5,
+        )
+        return res.status_code == 200
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Embedding trigger failed: %s", exc)
+        return False
 
 
 @lru_cache(maxsize=1)
@@ -54,18 +78,6 @@ def upload_document(path: str, data: bytes, content_type: str) -> Optional[str]:
         return path
     except Exception as exc:  # noqa: BLE001
         logger.warning("Supabase storage upload failed: %s", exc)
-        return None
-
-
-def get_public_url(path: str) -> Optional[str]:
-    """Return the public URL for a stored object, or None if unconfigured."""
-    client = get_client()
-    if client is None:
-        return None
-    try:
-        return client.storage.from_(settings.SUPABASE_STORAGE_BUCKET).get_public_url(path)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Supabase get_public_url failed: %s", exc)
         return None
 
 
