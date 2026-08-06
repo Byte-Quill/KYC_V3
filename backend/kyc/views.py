@@ -29,11 +29,17 @@ User = get_user_model()
 
 
 class LoginThrottle(BaseThrottle):
-    """Per-IP login throttle keyed on X-Forwarded-For when present."""
+    """Per-credential login throttle (email + IP) to stop stuffing one account.
+
+    Keying on email alone would let an attacker distribute attempts across
+    many accounts; keying on IP alone would poison a shared proxy/NAT address
+    for everyone behind it. Using both bounds both attacks.
+    """
 
     def allow_request(self, request, view):
         ident = self.get_ident(request)
-        key = f"login-throttle:{ident}"
+        email = (request.data.get("email") or "").strip().lower()
+        key = f"login-throttle:{email}:{ident}"
         count = cache.get(key, 0)
         if count >= 10:
             return False
