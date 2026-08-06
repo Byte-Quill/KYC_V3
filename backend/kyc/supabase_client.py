@@ -64,28 +64,3 @@ def create_signed_url(path: str, expires_in: int = 3600) -> str | None:
     except Exception as exc:  # noqa: BLE001
         logger.warning("Supabase create_signed_url failed: %s", exc)
         return None
-
-
-# ---- Embeddings ----
-
-def trigger_embedding(application_id: str) -> bool:
-    """Ask the Supabase Edge Function to (re)generate the application embedding.
-
-    The Edge Function is authenticated with a shared secret so only our backend
-    can invoke it. No-op when the secret is unset.
-    """
-    secret = getattr(settings, "SUPABASE_FUNCTION_SECRET", "")
-    url = getattr(settings, "SUPABASE_FUNCTIONS_URL", "")
-    if not secret or not url:
-        return False
-    try:
-        res = requests.post(
-            f"{url}/generate-embedding",
-            json={"application_id": str(application_id)},
-            headers={"Authorization": f"Bearer {secret}"},
-            timeout=5,
-        )
-        return res.status_code == 200
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Embedding trigger failed: %s", exc)
-        return False

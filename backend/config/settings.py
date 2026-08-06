@@ -175,9 +175,6 @@ if not DEBUG:
 # Project URL and keys from the Supabase dashboard (Settings > API).
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
-# Edge Function invocation (shared secret must match the deployed function).
-SUPABASE_FUNCTIONS_URL = os.environ.get("SUPABASE_FUNCTIONS_URL", "")
-SUPABASE_FUNCTION_SECRET = os.environ.get("SUPABASE_FUNCTION_SECRET", "")
 # Storage bucket for KYC documents (created via the Supabase dashboard or CLI).
 SUPABASE_STORAGE_BUCKET = os.environ.get("SUPABASE_STORAGE_BUCKET", "kyc-documents")
 # Use Supabase Storage for document uploads when configured, else local media.

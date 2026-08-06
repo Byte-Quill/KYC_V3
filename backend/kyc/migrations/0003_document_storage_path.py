@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('kyc', '0002_kycapplication_embedding'),
+        ('kyc', '0001_initial'),
     ]
 
     operations = [

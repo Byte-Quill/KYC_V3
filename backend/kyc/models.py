@@ -7,11 +7,6 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
-try:
-    from pgvector.django import VectorField
-except ImportError:  # pragma: no cover - pgvector optional at import time
-    VectorField = None
-
 
 def validate_file_content(file_obj):
     """Validate the file's content matches its extension (magic-byte sniff).
@@ -123,14 +118,6 @@ class KYCApplication(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     submitted_at = models.DateTimeField(null=True, blank=True)
-
-    # Vector embedding of the application text for semantic duplicate/fraud
-    # detection. Populated by an Edge Function or background job. Requires the
-    # pgvector extension on Postgres; stored as NULL on SQLite.
-    if VectorField is not None:
-        embedding = VectorField(dimensions=1536, null=True, blank=True)
-    else:  # SQLite fallback
-        embedding = models.JSONField(null=True, blank=True)
 
     class Meta:
         ordering = ["-created_at"]

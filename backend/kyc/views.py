@@ -89,8 +89,6 @@ class KYCApplicationViewSet(viewsets.ModelViewSet):
             except DjangoValidationError as exc:
                 raise ValidationError(exc.message)
             log_action(application, request.user, AuditLog.Action.SUBMITTED)
-        # Fire-and-forget embedding generation for fraud/duplicate detection.
-        supabase_client.trigger_embedding(application.id)
         return Response(self.get_serializer(application).data)
 
     @action(detail=True, methods=["post"], parser_classes=(MultiPartParser, FormParser))
