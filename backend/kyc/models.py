@@ -74,6 +74,11 @@ class KYCApplication(models.Model):
         NATIONAL_ID = "national_id", "National ID"
         DRIVERS_LICENSE = "drivers_license", "Driver's License"
 
+    class Decision(models.TextChoices):
+        APPROVE = "approve", "Approve"
+        REJECT = "reject", "Reject"
+        REQUEST_RESUBMISSION = "request_resubmission", "Request Resubmission"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     applicant = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -153,9 +158,9 @@ class KYCApplication(models.Model):
         if self.status not in (self.Status.SUBMITTED, self.Status.UNDER_REVIEW):
             raise ValidationError("Application is not in a reviewable state.")
         mapping = {
-            "approve": self.Status.APPROVED,
-            "reject": self.Status.REJECTED,
-            "request_resubmission": self.Status.RESUBMISSION_REQUESTED,
+            self.Decision.APPROVE: self.Status.APPROVED,
+            self.Decision.REJECT: self.Status.REJECTED,
+            self.Decision.REQUEST_RESUBMISSION: self.Status.RESUBMISSION_REQUESTED,
         }
         if decision not in mapping:
             raise ValidationError(f"Invalid decision: {decision}")

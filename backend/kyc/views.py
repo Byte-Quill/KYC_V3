@@ -1,5 +1,4 @@
 from django.contrib.auth import get_user_model
-from django.core.cache import cache
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 import os
@@ -9,7 +8,6 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.throttling import AnonRateThrottle, BaseThrottle, ScopedRateThrottle
 from rest_framework_simplejwt.views import TokenObtainPairView
 
 from . import supabase_client
@@ -24,31 +22,10 @@ from .serializers import (
     ReviewSerializer,
     UserSerializer,
 )
+from .services import log_action
+from .throttles import LoginThrottle, RegisterThrottle
 
 User = get_user_model()
-
-
-class LoginThrottle(BaseThrottle):
-    """Per-credential login throttle (email + IP) to stop stuffing one account.
-
-    Keying on email alone would let an attacker distribute attempts across
-    many accounts; keying on IP alone would poison a shared proxy/NAT address
-    for everyone behind it. Using both bounds both attacks.
-    """
-
-    def allow_request(self, request, view):
-        ident = self.get_ident(request)
-        email = (request.data.get("email") or "").strip().lower()
-        key = f"login-throttle:{email}:{ident}"
-        count = cache.get(key, 0)
-        if count >= 10:
-            return False
-        cache.set(key, count + 1, 60 * 10)
-        return True
-
-
-class RegisterThrottle(AnonRateThrottle):
-    rate = "5/hour"
 
 
 class EmailTokenObtainPairView(TokenObtainPairView):
@@ -56,12 +33,6 @@ class EmailTokenObtainPairView(TokenObtainPairView):
 
     serializer_class = EmailTokenObtainPairSerializer
     throttle_classes = [LoginThrottle]
-
-
-def log_action(application, actor, action, detail=""):
-    AuditLog.objects.create(
-        application=application, actor=actor, action=action, detail=detail
-    )
 
 
 class RegisterView(generics.CreateAPIView):
@@ -89,6 +60,8 @@ class KYCApplicationViewSet(viewsets.ModelViewSet):
         if user.is_reviewer:
             status_filter = self.request.query_params.get("status")
             if status_filter:
+                if status_filter not in KYCApplication.Status.values:
+                    raise ValidationError(f"Invalid status: {status_filter}")
                 qs = qs.filter(status=status_filter)
             return qs
         return qs.filter(applicant=user)
@@ -188,9 +161,9 @@ class KYCApplicationViewSet(viewsets.ModelViewSet):
             except DjangoValidationError as exc:
                 raise ValidationError(exc.message)
             action_map = {
-                "approve": AuditLog.Action.APPROVED,
-                "reject": AuditLog.Action.REJECTED,
-                "request_resubmission": AuditLog.Action.RESUBMISSION_REQUESTED,
+                KYCApplication.Decision.APPROVE: AuditLog.Action.APPROVED,
+                KYCApplication.Decision.REJECT: AuditLog.Action.REJECTED,
+                KYCApplication.Decision.REQUEST_RESUBMISSION: AuditLog.Action.RESUBMISSION_REQUESTED,
             }
             log_action(application, request.user, action_map[decision], detail=notes)
         return Response(self.get_serializer(application).data)

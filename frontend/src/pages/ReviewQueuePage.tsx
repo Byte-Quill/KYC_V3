@@ -1,38 +1,21 @@
-import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
 import * as api from "../api";
+import Pagination from "../components/Pagination";
 import StatusBadge from "../components/StatusBadge";
-import type { KYCApplication } from "../types";
+import { usePaginatedList } from "../hooks/usePaginatedList";
 
 export default function ReviewQueuePage() {
-  const [queue, setQueue] = useState<KYCApplication[]>([]);
-  const [count, setCount] = useState(0);
-  const [hasNext, setHasNext] = useState(false);
-  const [hasPrev, setHasPrev] = useState(false);
-  const [pageNum, setPageNum] = useState(1);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  const load = useCallback(async (pageNumber: number) => {
-    setLoading(true);
-    setError("");
-    try {
-      const data = await api.fetchReviewQueue(pageNumber);
-      setQueue(data.results);
-      setCount(data.count);
-      setHasNext(!!data.next);
-      setHasPrev(!!data.previous);
-    } catch {
-      setError("Failed to load review queue.");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load(pageNum);
-  }, [load, pageNum]);
+  const {
+    items: queue,
+    count,
+    hasNext,
+    hasPrev,
+    pageNum,
+    setPageNum,
+    loading,
+    error,
+  } = usePaginatedList(api.fetchReviewQueue, "Failed to load review queue.");
 
   return (
     <div>
@@ -89,26 +72,15 @@ export default function ReviewQueuePage() {
         </table>
       </div>
 
-      <div className="mt-6 flex items-center justify-between text-sm">
-        <span className="text-slate-500">{count} awaiting review</span>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setPageNum((n) => Math.max(1, n - 1))}
-            disabled={!hasPrev || loading}
-            className="rounded border border-slate-300 px-3 py-1 hover:bg-slate-50 disabled:opacity-50"
-          >
-            ← Prev
-          </button>
-          <span className="px-2 py-1 text-slate-600">Page {pageNum}</span>
-          <button
-            onClick={() => setPageNum((n) => n + 1)}
-            disabled={!hasNext || loading}
-            className="rounded border border-slate-300 px-3 py-1 hover:bg-slate-50 disabled:opacity-50"
-          >
-            Next →
-          </button>
-        </div>
-      </div>
+      <Pagination
+        count={count}
+        pageNum={pageNum}
+        hasNext={hasNext}
+        hasPrev={hasPrev}
+        loading={loading}
+        onPageChange={setPageNum}
+        label="awaiting review"
+      />
     </div>
   );
 }

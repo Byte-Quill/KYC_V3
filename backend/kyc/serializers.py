@@ -143,13 +143,14 @@ class KYCApplicationSerializer(serializers.ModelSerializer):
 
 
 class ReviewSerializer(serializers.Serializer):
-    DECISIONS = ("approve", "reject", "request_resubmission")
-
-    decision = serializers.ChoiceField(choices=DECISIONS)
+    decision = serializers.ChoiceField(choices=KYCApplication.Decision.choices)
     notes = serializers.CharField(required=False, allow_blank=True, default="")
 
     def validate(self, attrs):
-        if attrs["decision"] in ("reject", "request_resubmission") and not attrs["notes"].strip():
+        if attrs["decision"] in (
+            KYCApplication.Decision.REJECT,
+            KYCApplication.Decision.REQUEST_RESUBMISSION,
+        ) and not attrs["notes"].strip():
             raise serializers.ValidationError(
                 {"notes": "Notes are required when rejecting or requesting resubmission."}
             )
