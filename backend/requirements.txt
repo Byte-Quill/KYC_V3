@@ -5,9 +5,8 @@ django-cors-headers>=4.6,<5.0
 Pillow>=11.0,<12.0
 gunicorn>=21.2,<22.0
 whitenoise>=6.6,<7.0
-# Supabase + PostgreSQL
+# MongoDB (official Django backend, includes pymongo)
+django-mongodb-backend>=5.2,<5.3
+# Supabase (Storage + Realtime only; DB moved to MongoDB)
 supabase>=2.9,<3.0
-psycopg2-binary>=2.9.2,<3.0
-dj-database-url>=2.1,<3.0
 python-dotenv>=1.0.1,<2.0
-pgvector>=0.2.5,<0.4.0

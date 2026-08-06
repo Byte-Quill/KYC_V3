@@ -17,7 +17,7 @@ services:
         value: false
       - key: DJANGO_ALLOWED_HOSTS
         value: .onrender.com
-      - key: DATABASE_URL
+      - key: MONGODB_URI
         sync: false
       - key: SUPABASE_URL
         sync: false

@@ -3,7 +3,6 @@ import os
 from datetime import timedelta
 from pathlib import Path
 
-import dj_database_url
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -74,15 +73,13 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "config.wsgi.application"
 
-# Database: PostgreSQL (Supabase) via DATABASE_URL.
-# Set DATABASE_URL to your Supabase Postgres connection string, e.g.
-#   postgres://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres
-DATABASES = {
-    "default": dj_database_url.config(
-        conn_max_age=600,
-        conn_health_checks=True,
-    )
-}
+# Database: MongoDB via django-mongodb-backend.
+# Set MONGODB_URI, e.g. mongodb://localhost:27017/kyc (dev) or
+# mongodb+srv://<user>:<pass>@cluster.mongodb.net/kyc (Atlas).
+from django_mongodb_backend import parse_uri
+
+MONGODB_URI = os.environ.get("MONGODB_URI", "mongodb://localhost:27017/kyc")
+DATABASES = {"default": parse_uri(MONGODB_URI)}
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},

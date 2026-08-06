@@ -5,7 +5,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     DJANGO_SETTINGS_MODULE=config.settings
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libpq-dev curl \
+    && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

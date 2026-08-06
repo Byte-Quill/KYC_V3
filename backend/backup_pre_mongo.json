@@ -1,0 +1,117 @@
+[
+{
+  "model": "kyc.user",
+  "pk": 1,
+  "fields": {
+    "password": "pbkdf2_sha256$1000000$9Ay1vEJiCmsfirCGC72pbj$QmcvoIHxZDxp9vAim67nK06F0Ou3Fdc10VCoMaP3sLo=",
+    "last_login": null,
+    "is_superuser": false,
+    "username": "sjdusydghsd",
+    "first_name": "ahas",
+    "last_name": "sbdhbsd",
+    "is_staff": false,
+    "is_active": true,
+    "date_joined": "2026-08-06T02:48:59.654Z",
+    "email": "ajhdsjadch@gmail.com",
+    "role": "applicant",
+    "groups": [],
+    "user_permissions": []
+  }
+},
+{
+  "model": "kyc.user",
+  "pk": 2,
+  "fields": {
+    "password": "pbkdf2_sha256$1000000$t1Dw2k4ZE2WFHpL94p4tS2$akdOg5vQAoSGbXRmU/Z8G6gIAKpa85R2XoZS1zOuUwY=",
+    "last_login": null,
+    "is_superuser": true,
+    "username": "admin",
+    "first_name": "",
+    "last_name": "",
+    "is_staff": true,
+    "is_active": true,
+    "date_joined": "2026-08-06T03:00:12.719Z",
+    "email": "admin@kyc.local",
+    "role": "admin",
+    "groups": [],
+    "user_permissions": []
+  }
+},
+{
+  "model": "kyc.user",
+  "pk": 3,
+  "fields": {
+    "password": "pbkdf2_sha256$1000000$3vJdnDRc3iALcBaYJEX9sR$kBnsm8mBdQ2MO/009TWgRML7U/kggTa1P2X0/6i9kEU=",
+    "last_login": null,
+    "is_superuser": false,
+    "username": "reviewer",
+    "first_name": "",
+    "last_name": "",
+    "is_staff": true,
+    "is_active": true,
+    "date_joined": "2026-08-06T03:00:14.437Z",
+    "email": "reviewer@kyc.local",
+    "role": "reviewer",
+    "groups": [],
+    "user_permissions": []
+  }
+},
+{
+  "model": "kyc.user",
+  "pk": 4,
+  "fields": {
+    "password": "pbkdf2_sha256$1000000$UyHnP7ccxD7oPaVQ1pgnfQ$iOjnyRNOvOJkpQgGNytIOg+c3hoSYSmpFJqxtC3LjHs=",
+    "last_login": null,
+    "is_superuser": false,
+    "username": "applicant",
+    "first_name": "",
+    "last_name": "",
+    "is_staff": false,
+    "is_active": true,
+    "date_joined": "2026-08-06T03:00:15.673Z",
+    "email": "user@kyc.local",
+    "role": "applicant",
+    "groups": [],
+    "user_permissions": []
+  }
+},
+{
+  "model": "kyc.kycapplication",
+  "pk": "88c6c577-dacf-4065-be2d-37f33465a352",
+  "fields": {
+    "applicant": 4,
+    "status": "draft",
+    "full_name": "Demo Applicant",
+    "date_of_birth": "1990-01-15",
+    "nationality": "Indian",
+    "phone": "+91-9876543210",
+    "address_line1": "221B Baker Street",
+    "address_line2": "",
+    "city": "Mumbai",
+    "state": "Maharashtra",
+    "postal_code": "400001",
+    "country": "India",
+    "id_type": "passport",
+    "id_number": "A1234567",
+    "id_expiry": "2030-12-31",
+    "reviewer": null,
+    "review_notes": "",
+    "reviewed_at": null,
+    "created_at": "2026-08-06T03:00:17.656Z",
+    "updated_at": "2026-08-06T03:00:17.656Z",
+    "submitted_at": null,
+    "embedding": null
+  }
+},
+{
+  "model": "kyc.auditlog",
+  "pk": "233457f3-6b39-4986-9c57-a47927d5dab2",
+  "fields": {
+    "application": "88c6c577-dacf-4065-be2d-37f33465a352",
+    "actor": 4,
+    "action": "created",
+    "detail": "",
+    "created_at": "2026-08-06T03:00:17.816Z"
+  }
+}
+]

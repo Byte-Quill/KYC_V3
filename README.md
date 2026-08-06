@@ -1,6 +1,6 @@
 # KYC-V3 — Application Verification System
 
-A full-stack KYC (Know Your Customer) / application verification system built with Django + React, using Supabase for Postgres, Storage, Realtime, and Edge Functions.
+A full-stack KYC (Know Your Customer) / application verification system built with Django + React, using MongoDB for data and Supabase for Storage, Realtime, and Edge Functions.
 
 ---
 
@@ -25,12 +25,12 @@ A full-stack KYC (Know Your Customer) / application verification system built wi
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                    │                                       │
 │                    ┌───────────────┼───────────────┐                       │
-│                    │              SUPABASE         │                       │
-│                    │  ┌──────────┐ ┌─────────┐ ┌───┴───┐ ┌────────┐       │
-│                    │  │ Postgres │ │ Storage │ │Realtime│ │ Edge   │       │
-│                    │  │(Pooler)  │ │(Bucket) │ │Broadcast│ │Functions│       │
-│                    │  └──────────┘ └─────────┘ └───────┘ └────────┘       │
-│                    └─────────────────────────────────────────────────────┘   │
+│                    │    MONGODB    │   SUPABASE    │                       │
+│                    │  ┌──────────┐ │ ┌─────────┐ ┌─┴─────┐ ┌────────┐     │
+│                    │  │  Atlas / │ │ │ Storage │ │Realtime│ │ Edge   │     │
+│                    │  │  local   │ │ │(Bucket) │ │Broadcast│ │Functions│    │
+│                    │  └──────────┘ │ └─────────┘ └───────┘ └────────┘     │
+│                    └───────────────┴─────────────────────────────────────┘   │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -45,7 +45,7 @@ A full-stack KYC (Know Your Customer) / application verification system built wi
 | ------------------ | ------------------------------------------ | -------------------------------------- |
 | **Backend**        | Django 5.2, DRF 3.16                       | REST API, business logic               |
 | **Auth**           | SimpleJWT (access 1h, refresh 7d)          | Stateless JWT authentication           |
-| **Database**       | Supabase Postgres (Transaction Pooler)     | Primary data store                     |
+| **Database**       | MongoDB (django-mongodb-backend)           | Primary data store                     |
 | **File Storage**   | Supabase Storage (`kyc-documents` bucket)  | Document uploads, CDN URLs             |
 | **Realtime**       | Supabase Realtime (`kyc-status` channel)   | Live status updates                    |
 | **Edge Functions** | Supabase Edge Functions (Deno)             | Embedding generation for vector search |
@@ -70,9 +70,9 @@ KYC-V3/
 │   │   ├── supabase_client.py  # Thin wrapper: storage, realtime, generic helpers
 │   │   ├── management/commands/
 │   │   │   ├── seed_demo.py    # Creates demo users + sample data
-│   │   │   └── migrate_to_postgres.py  # SQLite → Postgres data migration
-│   │   └── migrations/         # 3 migrations (initial, embedding, storage_path)
-│   ├── .env                    # Local env (DATABASE_URL, Supabase keys)
+│   │   │   └── migrate_to_mongo.py  # Load dumpdata JSON into MongoDB
+│   │   └── migrations/         # Generated for MongoDB backend
+│   ├── .env                    # Local env (MONGODB_URI, Supabase keys)
 │   ├── .env.example            # Template
 │   ├── requirements.txt        # Python deps
 │   └── manage.py
@@ -248,10 +248,11 @@ UNDER_REVIEW       Reviewer claims from queue
 
 ## Supabase Integration Details
 
-### 1. Database (Postgres via Transaction Pooler)
+### 1. Database (MongoDB)
 
-- **URI format:** `postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:6543/postgres`
-- Set as `DATABASE_URL` in Render env vars
+- **Local dev:** `docker run -d -p 27017:27017 --name kyc-mongo mongo:7 --replSet rs0` then `docker exec kyc-mongo mongosh --eval "rs.initiate()"` (replica set enables transactions)
+- **Prod:** MongoDB Atlas cluster → copy `mongodb+srv://...` URI
+- Set as `MONGODB_URI` in env vars
 - Migrations run on deploy via `startCommand` in `render.yaml`
 
 ### 2. Storage (Document Uploads)
@@ -274,8 +275,7 @@ UNDER_REVIEW       Reviewer claims from queue
 - Path: `supabase/functions/generate-embedding/`
 - Trigger: HTTP POST with `{application_id, text}`
 - Calls OpenAI `text-embedding-3-small` → 1536-dim vector
-- Upserts into `kyc_application.embedding` (pgvector)
-- Enable `vector` extension in Supabase SQL editor: `CREATE EXTENSION vector;`
+- Stored in `kyc_application.embedding` as a BSON float array (Atlas Vector Search compatible)
 
 ---
 
@@ -292,7 +292,7 @@ cd backend
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
-# Edit .env: add DATABASE_URL (Supabase pooler), SUPABASE_* keys
+# Edit .env: add MONGODB_URI, SUPABASE_* keys
 python manage.py migrate
 python manage.py seed_demo          # Optional: demo users + data
 python manage.py runserver          # http://127.0.0.1:8000
@@ -335,7 +335,7 @@ Deploy both frontend and backend on Vercel using `vercel.json`:
    DJANGO_DEBUG=false
    DJANGO_ALLOWED_HOSTS=.vercel.app
    DJANGO_CSRF_TRUSTED_ORIGINS=https://your-app.vercel.app
-   DATABASE_URL=postgresql://postgres.<ref>:<pwd>@aws-0-<region>.pooler.supabase.com:6543/postgres
+   MONGODB_URI=mongodb+srv://<user>:<pwd>@<cluster>.mongodb.net/kyc
    SUPABASE_URL=https://<ref>.supabase.co
    SUPABASE_ANON_KEY=<anon-key>
    SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
@@ -363,7 +363,7 @@ Deploy both frontend and backend on Vercel using `vercel.json`:
 2. Blueprint reads `render.yaml` (backend service only)
 3. **Environment Variables** (set in Render dashboard):
    ```
-   DATABASE_URL=postgresql://postgres.<ref>:<pwd>@aws-0-<region>.pooler.supabase.com:6543/postgres
+   MONGODB_URI=mongodb+srv://<user>:<pwd>@<cluster>.mongodb.net/kyc
    SUPABASE_URL=https://<ref>.supabase.co
    SUPABASE_ANON_KEY=<anon-key>
    SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
@@ -392,7 +392,6 @@ Deploy both frontend and backend on Vercel using `vercel.json`:
 ### Supabase Setup Checklist
 
 - [ ] Create project → copy URL, anon key, service role key
-- [ ] **Database** → enable `vector` extension (SQL: `CREATE EXTENSION vector;`)
 - [ ] **Storage** → create bucket `kyc-documents` (public or private)
 - [ ] **Edge Functions** → deploy `generate-embedding` (set `OPENAI_API_KEY` in function env)
 - [ ] **Realtime** → enable for `kyc-status` channel (default on)
@@ -436,19 +435,19 @@ Deploy both frontend and backend on Vercel using `vercel.json`:
 
 ### Backend (`.env` / Render)
 
-| Variable                      | Required | Description                         |
-| ----------------------------- | -------- | ----------------------------------- |
-| `DJANGO_SECRET_KEY`           | ✅       | 50+ char random string              |
-| `DJANGO_DEBUG`                | ✅       | `true`/`false`                      |
-| `DJANGO_ALLOWED_HOSTS`        | ✅       | Comma-separated hosts               |
-| `DJANGO_CSRF_TRUSTED_ORIGINS` | ✅       | Comma-separated origins (HTTPS)     |
-| `DATABASE_URL`                | ✅       | Supabase Postgres pooler URI        |
-| `SUPABASE_URL`                | ✅       | `https://<ref>.supabase.co`         |
-| `SUPABASE_ANON_KEY`           | ✅       | Public anon key                     |
-| `SUPABASE_SERVICE_ROLE_KEY`   | ✅       | Secret service role key             |
-| `SUPABASE_STORAGE_BUCKET`     | ✅       | Bucket name (e.g., `kyc-documents`) |
-| `CORS_ALLOWED_ORIGINS`        | ✅       | Frontend URL(s) for CORS            |
-| `CUSTOM_DOMAIN`               | ❌       | Optional custom domain for CORS     |
+| Variable                      | Required | Description                             |
+| ----------------------------- | -------- | --------------------------------------- |
+| `DJANGO_SECRET_KEY`           | ✅       | 50+ char random string                  |
+| `DJANGO_DEBUG`                | ✅       | `true`/`false`                          |
+| `DJANGO_ALLOWED_HOSTS`        | ✅       | Comma-separated hosts                   |
+| `DJANGO_CSRF_TRUSTED_ORIGINS` | ✅       | Comma-separated origins (HTTPS)         |
+| `MONGODB_URI`                 | ✅       | MongoDB connection URI (local or Atlas) |
+| `SUPABASE_URL`                | ✅       | `https://<ref>.supabase.co`             |
+| `SUPABASE_ANON_KEY`           | ✅       | Public anon key                         |
+| `SUPABASE_SERVICE_ROLE_KEY`   | ✅       | Secret service role key                 |
+| `SUPABASE_STORAGE_BUCKET`     | ✅       | Bucket name (e.g., `kyc-documents`)     |
+| `CORS_ALLOWED_ORIGINS`        | ✅       | Frontend URL(s) for CORS                |
+| `CUSTOM_DOMAIN`               | ❌       | Optional custom domain for CORS         |
 
 ### Frontend (Vercel)
 
@@ -466,7 +465,7 @@ cd backend && source .venv/bin/activate
 python manage.py migrate              # Apply migrations
 python manage.py makemigrations kyc   # Create new migration
 python manage.py seed_demo            # Seed demo data
-python manage.py migrate_to_postgres  # Migrate SQLite → Postgres
+python manage.py migrate_to_mongo backup_pre_mongo.json  # Load old SQL dump into MongoDB
 python manage.py test kyc.tests       # Run tests (8 tests)
 python manage.py createsuperuser      # Create admin user
 
@@ -487,14 +486,14 @@ supabase functions deploy generate-embedding
 
 ## Troubleshooting
 
-| Issue                                    | Cause                      | Fix                                                                                         |
-| ---------------------------------------- | -------------------------- | ------------------------------------------------------------------------------------------- |
-| `ENOTFOUND` / `ENOIDENTIFIER` on migrate | Wrong pooler URI           | Use **Transaction Pooler** (port 6543) with `postgres.<ref>` user                           |
-| CORS error on Vercel                     | Missing origin in backend  | Add `https://your-app.vercel.app` to `CORS_ALLOWED_ORIGINS` & `DJANGO_CSRF_TRUSTED_ORIGINS` |
-| 401 after refresh                        | Refresh token expired (7d) | Re-login; check `SIMPLE_JWT.REFRESH_TOKEN_LIFETIME`                                         |
-| Documents not showing                    | Supabase bucket private    | Use signed URLs or make bucket public                                                       |
-| Realtime not working                     | Channel not subscribed     | Frontend needs to implement `supabase.channel('kyc-status').on('broadcast', ...)`           |
-| Render deploy fails                      | `DATABASE_URL` not set     | Add all env vars in Render dashboard before deploy                                          |
+| Issue                                     | Cause                      | Fix                                                                                         |
+| ----------------------------------------- | -------------------------- | ------------------------------------------------------------------------------------------- |
+| `NotSupportedError: MongoDB 6.0 or later` | Old MongoDB version        | Use MongoDB 6.0+ (Atlas M0 works); local Docker needs CPU with AVX for mongo:5+ images      |
+| CORS error on Vercel                      | Missing origin in backend  | Add `https://your-app.vercel.app` to `CORS_ALLOWED_ORIGINS` & `DJANGO_CSRF_TRUSTED_ORIGINS` |
+| 401 after refresh                         | Refresh token expired (7d) | Re-login; check `SIMPLE_JWT.REFRESH_TOKEN_LIFETIME`                                         |
+| Documents not showing                     | Supabase bucket private    | Use signed URLs or make bucket public                                                       |
+| Realtime not working                      | Channel not subscribed     | Frontend needs to implement `supabase.channel('kyc-status').on('broadcast', ...)`           |
+| Render deploy fails                       | `MONGODB_URI` not set      | Add all env vars in Render dashboard before deploy                                          |
 
 ---
 

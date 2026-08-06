@@ -7,11 +7,6 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
-try:
-    from pgvector.django import VectorField
-except ImportError:  # pragma: no cover - pgvector optional at import time
-    VectorField = None
-
 
 class User(AbstractUser):
     """Custom user with a role for the KYC workflow."""
@@ -98,12 +93,9 @@ class KYCApplication(models.Model):
     submitted_at = models.DateTimeField(null=True, blank=True)
 
     # Vector embedding of the application text for semantic duplicate/fraud
-    # detection. Populated by an Edge Function or background job. Requires the
-    # pgvector extension on Postgres; stored as NULL on SQLite.
-    if VectorField is not None:
-        embedding = VectorField(dimensions=1536, null=True, blank=True)
-    else:  # SQLite fallback
-        embedding = models.JSONField(null=True, blank=True)
+    # detection. Populated by an Edge Function or background job. Stored as a
+    # BSON array of floats in MongoDB (Atlas Vector Search compatible).
+    embedding = models.JSONField(null=True, blank=True)
 
     class Meta:
         ordering = ["-created_at"]
