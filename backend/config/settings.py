@@ -124,11 +124,13 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:5173",
 ]
 
-# Add Render.com domains in production
+# Add hosting platform domains in production
 if not DEBUG:
-    CORS_ALLOWED_ORIGINS.extend([
-        "https://*.onrender.com",
-    ])
+    CORS_ALLOWED_ORIGIN_REGEXES = [
+        r"^https://.*\.onrender\.com$",
+        r"^https://.*\.up\.railway\.app$",
+        r"^https://.*\.vercel\.app$",
+    ]
     # Allow custom domain if set
     custom_domain = os.environ.get("CUSTOM_DOMAIN")
     if custom_domain:
