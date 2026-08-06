@@ -62,17 +62,6 @@ def log_action(application, actor, action, detail=""):
     AuditLog.objects.create(
         application=application, actor=actor, action=action, detail=detail
     )
-    # Broadcast status changes to Supabase Realtime so the frontend can update
-    # live without polling. No-op when Supabase is not configured.
-    if action in (
-        AuditLog.Action.SUBMITTED,
-        AuditLog.Action.APPROVED,
-        AuditLog.Action.REJECTED,
-        AuditLog.Action.RESUBMISSION_REQUESTED,
-    ):
-        supabase_client.broadcast_status_change(
-            str(application.id), application.status, detail
-        )
 
 
 class RegisterView(generics.CreateAPIView):

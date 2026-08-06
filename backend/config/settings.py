@@ -177,7 +177,6 @@ if not DEBUG:
 # ---- Supabase ----
 # Project URL and keys from the Supabase dashboard (Settings > API).
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
-SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
 SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
 # Edge Function invocation (shared secret must match the deployed function).
 SUPABASE_FUNCTIONS_URL = os.environ.get("SUPABASE_FUNCTIONS_URL", "")
