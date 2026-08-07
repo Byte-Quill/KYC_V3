@@ -41,11 +41,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async (email: string, password: string) => {
     const tokens = await api.login(email, password);
-    api.setTokens(tokens.access, tokens.refresh);
+    api.setTokens(tokens.access);
     setUser(await api.fetchMe());
   }, []);
 
   const logout = useCallback(() => {
+    // Best-effort server-side blacklist + cookie clear; always clear locally.
+    void api.logout().catch(() => {});
     api.clearTokens();
     setUser(null);
   }, []);

@@ -139,7 +139,7 @@ AuditLog
 ```
 ┌─────────┐     POST /api/auth/register/      ┌─────────┐
 │ Frontend │ ─────────────────────────────────► │ Backend │
-└─────────┘   {email, password, name, role}    └────┬────┘
+└─────────┘   {email, password, name}          └────┬────┘
                                                      │
                                                      ▼
                                             Create User (role=APPLICANT)
@@ -150,23 +150,32 @@ AuditLog
 └─────────┘   {email, password}              │
                 │                            ▼
                 │                    Validate credentials
-                │                    Return {access, refresh}
+                │                    Return {access} in body
+                │                    Set refresh_token HttpOnly cookie
                 │                            │
                 ▼                            │
-         Store tokens in memory + localStorage
+         Keep access token in memory ONLY
+         (never localStorage)
          Set Authorization: Bearer <access>
                 │
                 ▼
     ┌─────────────────────────────────────────────────────┐
     │           Subsequent Requests                        │
     │  GET /api/applications/                              │
-    │  Authorization: Bearer <access>                      │
+    │  Authorization: Bearer <access>   (credentials: include)  │
     │                                                      │
     │  If 401 (expired):                                   │
-    │    POST /api/auth/token/refresh/ {refresh}           │
+    │    POST /api/auth/token/refresh/   (cookie sent automatically) │
     │    → new access token, retry original request        │
     └─────────────────────────────────────────────────────┘
 ```
+
+**Token security model:**
+- **Access token** (1 h): kept in memory in the SPA. XSS cannot exfiltrate it after page unload, and it expires quickly.
+- **Refresh token** (7 d): stored server-side in an `HttpOnly; Secure; SameSite` cookie — JavaScript cannot read it, so XSS cannot steal it.
+- **Rotation**: every refresh rotates the token and blacklists the previous one (`ROTATE_REFRESH_TOKENS`, `BLACKLIST_AFTER_ROTATION`).
+- **CSRF**: the refresh endpoint validates the `Origin` header against the configured CORS origins.
+- **Logout**: `POST /api/auth/logout/` blacklists the refresh token and clears the cookie.
 
 **Token lifetimes:** Access = 1 hour, Refresh = 7 days (configurable in `SIMPLE_JWT`).
 
@@ -214,9 +223,12 @@ UNDER_REVIEW       Reviewer claims from queue
 | Method | Endpoint                                     | Auth | Role                                | Description              |
 | ------ | -------------------------------------------- | ---- | ----------------------------------- | ------------------------ |
 | POST   | `/api/auth/register/`                        | ❌   | —                                   | Register applicant       |
-| POST   | `/api/auth/token/`                           | ❌   | —                                   | Login → JWT pair         |
-| POST   | `/api/auth/token/refresh/`                   | ❌   | —                                   | Refresh access token     |
+| POST   | `/api/auth/token/`                           | ❌   | —                                   | Login → access token + refresh cookie |
+| POST   | `/api/auth/token/refresh/`                   | ❌   | —                                   | Rotate refresh cookie → new access token |
+| POST   | `/api/auth/logout/`                          | ❌   | —                                   | Blacklist refresh token, clear cookie |
 | GET    | `/api/auth/me/`                              | ✅   | Any                                 | Current user profile     |
+| GET    | `/healthz`                                   | ❌   | —                                   | Liveness probe           |
+| GET    | `/readyz`                                    | ❌   | —                                   | Readiness probe (DB + storage) |
 | GET    | `/api/applications/`                         | ✅   | Applicant: own, Reviewer/Admin: all | List applications        |
 | POST   | `/api/applications/`                         | ✅   | Applicant                           | Create draft application |
 | GET    | `/api/applications/{id}/`                    | ✅   | Owner/Reviewer/Admin                | Application detail       |

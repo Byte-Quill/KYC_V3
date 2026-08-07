@@ -80,9 +80,62 @@ class AuthTests(APITestCase):
     def test_me_requires_auth(self):
         self.assertEqual(self.client.get("/api/auth/me/").status_code, status.HTTP_401_UNAUTHORIZED)
 
+    def test_login_sets_httponly_refresh_cookie(self):
+        make_user("new@kyc.local", User.Role.APPLICANT)
+        res = self.client.post(
+            "/api/auth/token/",
+            {"email": "new@kyc.local", "password": "Passw0rd!"},
+        )
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        # Refresh token must NOT be exposed in the response body.
+        self.assertNotIn("refresh", res.data)
+        self.assertIn("refresh_token", res.cookies)
+        cookie = res.cookies["refresh_token"]
+        self.assertTrue(cookie["httponly"])
+
+    def test_refresh_with_cookie_rotates_token(self):
+        make_user("new@kyc.local", User.Role.APPLICANT)
+        self.client.post(
+            "/api/auth/token/",
+            {"email": "new@kyc.local", "password": "Passw0rd!"},
+        )
+        old_cookie = self.client.cookies["refresh_token"].value
+
+        res = self.client.post("/api/auth/token/refresh/")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertIn("access", res.data)
+        # Rotation: the cookie value must change.
+        new_cookie = self.client.cookies["refresh_token"].value
+        self.assertNotEqual(old_cookie, new_cookie)
+
+    def test_refresh_rejects_disallowed_origin(self):
+        make_user("new@kyc.local", User.Role.APPLICANT)
+        self.client.post(
+            "/api/auth/token/",
+            {"email": "new@kyc.local", "password": "Passw0rd!"},
+        )
+        res = self.client.post(
+            "/api/auth/token/refresh/",
+            HTTP_ORIGIN="https://evil.example.com",
+        )
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_logout_clears_cookie(self):
+        make_user("new@kyc.local", User.Role.APPLICANT)
+        self.client.post(
+            "/api/auth/token/",
+            {"email": "new@kyc.local", "password": "Passw0rd!"},
+        )
+        res = self.client.post("/api/auth/logout/")
+        self.assertEqual(res.status_code, status.HTTP_204_NO_CONTENT)
+        # Cookie cleared -> refresh must now fail.
+        res = self.client.post("/api/auth/token/refresh/")
+        self.assertEqual(res.status_code, status.HTTP_401_UNAUTHORIZED)
+
 
 class ApplicationFlowTests(APITestCase):
     def setUp(self):
+        cache.clear()  # keep user-scoped write throttles deterministic per test
         self.applicant = make_user("user@kyc.local", User.Role.APPLICANT)
         self.other = make_user("other@kyc.local", User.Role.APPLICANT)
         self.reviewer = make_user("rev@kyc.local", User.Role.REVIEWER)
@@ -97,7 +150,11 @@ class ApplicationFlowTests(APITestCase):
         return res.data["id"]
 
     def upload_doc(self, app_id):
-        file = SimpleUploadedFile("passport.pdf", b"%PDF-1.4 fake", content_type="application/pdf")
+        file = SimpleUploadedFile(
+            "passport.pdf",
+            b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF",
+            content_type="application/pdf",
+        )
         return self.client.post(
             f"/api/applications/{app_id}/documents/",
             {"doc_type": "id_proof", "file": file},
@@ -127,7 +184,7 @@ class ApplicationFlowTests(APITestCase):
         self.assertEqual(res.data["status"], "approved")
 
         res = self.client.get(f"/api/applications/{app_id}/audit/")
-        actions = [entry["action"] for entry in res.data]
+        actions = [entry["action"] for entry in res.data["results"]]
         self.assertEqual(
             actions,
             ["approved", "submitted", "document_uploaded", "created"],

@@ -1,5 +1,6 @@
 """Django settings for the KYC-V3 backend."""
 import os
+import sys
 from datetime import timedelta
 from pathlib import Path
 
@@ -10,14 +11,15 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 load_dotenv(BASE_DIR / ".env")
 
-SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY")
-if not SECRET_KEY:
-    # Allow build-time operations (collectstatic, etc.) without a real secret
-    # In production, DJANGO_SECRET_KEY must be set via environment variable
-    SECRET_KEY = "django-insecure-build-time-only-key-not-for-production"
-    import warnings
-    warnings.warn("DJANGO_SECRET_KEY not set, using insecure build-time key", RuntimeWarning)
+_BUILD_TIME_SENTINEL = "django-insecure-build-time-only-key-not-for-production"
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY") or _BUILD_TIME_SENTINEL
 DEBUG = os.environ.get("DJANGO_DEBUG", "false").lower() == "true"
+
+if not DEBUG and SECRET_KEY == _BUILD_TIME_SENTINEL:
+    raise RuntimeError(
+        "DJANGO_SECRET_KEY must be set when DJANGO_DEBUG=false. "
+        "Refusing to start with the insecure build-time fallback."
+    )
 ALLOWED_HOSTS = [
     host.strip() for host in os.environ.get("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",") if host.strip()
 ]
@@ -51,6 +53,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "kyc.middleware.RequestIDMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -83,6 +86,25 @@ DATABASES = {
     )
 }
 
+# Rate-limit counters and sessions. In production use Redis so throttling is
+# shared across gunicorn workers/processes (LocMemCache is per-process and
+# gets wiped on restart).
+_REDIS_URL = os.environ.get("REDIS_URL", "").strip()
+if _REDIS_URL:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.redis.RedisCache",
+            "LOCATION": _REDIS_URL,
+        }
+    }
+else:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "LOCATION": "kyc-default",
+        }
+    }
+
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
     {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
@@ -94,9 +116,6 @@ LANGUAGE_CODE = "en-us"
 TIME_ZONE = "UTC"
 USE_I18N = True
 USE_TZ = True
-
-STATIC_URL = "static/"
-STATIC_ROOT = BASE_DIR / "staticfiles"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
@@ -111,6 +130,11 @@ REST_FRAMEWORK = {
     ),
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 20,
+    "DEFAULT_THROTTLE_RATES": {
+        "submit": "10/hour",
+        "documents": "30/hour",
+        "review": "60/hour",
+    },
 }
 
 SIMPLE_JWT = {
@@ -120,10 +144,20 @@ SIMPLE_JWT = {
     "BLACKLIST_AFTER_ROTATION": True,
 }
 
+# Refresh token lives in an HttpOnly cookie (not localStorage) so XSS cannot
+# steal it. The access token is kept in memory on the client.
+JWT_AUTH_COOKIE = "refresh_token"
+JWT_AUTH_COOKIE_PATH = "/"
+JWT_AUTH_COOKIE_MAX_AGE = int(timedelta(days=7).total_seconds())
+JWT_AUTH_COOKIE_SECURE = not DEBUG
+JWT_AUTH_COOKIE_SAMESITE = "None" if not DEBUG else "Lax"
+
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
 ]
+# Required so the refresh-token cookie can be sent cross-origin from the SPA.
+CORS_ALLOW_CREDENTIALS = True
 
 if not DEBUG:
     CORS_ALLOWED_ORIGIN_REGEXES = [
@@ -144,6 +178,44 @@ ALLOWED_UPLOAD_EXTENSIONS = [".jpg", ".jpeg", ".png", ".pdf"]
 # Reject oversized request bodies before DRF buffers them into memory.
 DATA_UPLOAD_MAX_MEMORY_SIZE = MAX_UPLOAD_SIZE_MB * 1024 * 1024 + 1024 * 1024
 FILE_UPLOAD_MAX_MEMORY_SIZE = MAX_UPLOAD_SIZE_MB * 1024 * 1024
+
+# --- Logging ---
+
+LOGGING: dict[str, object] = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "filters": {
+        "request_id": {
+            "()": "kyc.middleware.RequestIDFilter",
+        },
+    },
+    "formatters": {
+        "json": {
+            "()": "pythonjsonlogger.jsonlogger.JsonFormatter",
+            "format": "%(asctime)s %(name)s %(levelname)s %(request_id)s %(message)s",
+        },
+        "plain": {
+            "format": "[%(asctime)s] %(levelname)s %(name)s %(request_id)s: %(message)s",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "stream": sys.stdout,
+            "formatter": "json" if not DEBUG else "plain",
+            "filters": ["request_id"],
+        },
+    },
+    "root": {
+        "level": "INFO",
+        "handlers": ["console"],
+    },
+    "loggers": {
+        "django": {"level": "INFO", "handlers": ["console"], "propagate": False},
+        "kyc": {"level": "DEBUG" if DEBUG else "INFO", "handlers": ["console"], "propagate": False},
+        "kyc.request": {"level": "INFO", "handlers": ["console"], "propagate": False},
+    },
+}
 
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"

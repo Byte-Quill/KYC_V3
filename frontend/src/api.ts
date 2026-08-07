@@ -4,21 +4,17 @@ const BASE = import.meta.env.VITE_API_URL
   ? `${import.meta.env.VITE_API_URL.replace(/\/$/, "")}/api`
   : "/api";
 
-let accessToken: string | null = localStorage.getItem("access");
-let refreshToken: string | null = localStorage.getItem("refresh");
+// Access token lives in memory ONLY (survives nothing, XSS cannot read it long-term).
+// The refresh token lives in an HttpOnly cookie set by the backend, sent
+// automatically with `credentials: "include"`.
+let accessToken: string | null = null;
 
-export function setTokens(access: string, refresh: string) {
+export function setTokens(access: string) {
   accessToken = access;
-  refreshToken = refresh;
-  localStorage.setItem("access", access);
-  localStorage.setItem("refresh", refresh);
 }
 
 export function clearTokens() {
   accessToken = null;
-  refreshToken = null;
-  localStorage.removeItem("access");
-  localStorage.removeItem("refresh");
 }
 
 export function isAuthenticated() {
@@ -26,11 +22,12 @@ export function isAuthenticated() {
 }
 
 async function refreshAccess(): Promise<boolean> {
-  if (!refreshToken) return false;
+  // The refresh cookie travels with the request automatically.
   const res = await fetch(`${BASE}/auth/token/refresh/`, {
     method: "POST",
+    credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ refresh: refreshToken }),
+    body: JSON.stringify({}),
   });
   if (!res.ok) {
     clearTokens();
@@ -38,11 +35,6 @@ async function refreshAccess(): Promise<boolean> {
   }
   const data = await res.json();
   accessToken = data.access;
-  localStorage.setItem("access", data.access);
-  if (data.refresh) {
-    refreshToken = data.refresh;
-    localStorage.setItem("refresh", data.refresh);
-  }
   return true;
 }
 
@@ -69,7 +61,11 @@ async function request<T>(
     headers.set("Authorization", `Bearer ${accessToken}`);
   }
 
-  const res = await fetch(`${BASE}${path}`, { ...options, headers });
+  const res = await fetch(`${BASE}${path}`, {
+    ...options,
+    headers,
+    credentials: "include",
+  });
 
   if (res.status === 401 && retry && (await refreshAccess())) {
     return request<T>(path, options, false);
@@ -83,7 +79,7 @@ async function request<T>(
 }
 
 export const login = (email: string, password: string) =>
-  request<{ access: string; refresh: string }>("/auth/token/", {
+  request<{ access: string }>("/auth/token/", {
     method: "POST",
     body: JSON.stringify({ email, password }),
   });
@@ -98,6 +94,12 @@ export const register = (payload: {
   request<User>("/auth/register/", { method: "POST", body: JSON.stringify(payload) });
 
 export const fetchMe = () => request<User>("/auth/me/");
+
+export const logout = () =>
+  request<void>("/auth/logout/", {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
 
 export const listApplications = (page = 1) =>
   request<Page<KYCApplication>>(`/applications/?page=${page}`);
@@ -128,6 +130,6 @@ export const reviewApplication = (id: string, decision: string, notes: string) =
     body: JSON.stringify({ decision, notes }),
   });
 
-export const fetchAudit = (id: string) => request<AuditEntry[]>(`/applications/${id}/audit/`);
+export const fetchAudit = (id: string) => request<Page<AuditEntry>>(`/applications/${id}/audit/`);
 export const fetchReviewQueue = (page = 1) =>
   request<Page<KYCApplication>>(`/review-queue/?page=${page}`);

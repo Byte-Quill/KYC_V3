@@ -24,7 +24,7 @@ export default function ReviewDetailPage() {
         api.fetchAudit(id),
       ]);
       setApp(application);
-      setAudit(trail);
+      setAudit(trail.results);
     } catch {
       setError("Failed to load application.");
     }

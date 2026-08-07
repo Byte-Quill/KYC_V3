@@ -24,6 +24,23 @@ def _headers() -> dict[str, str]:
     }
 
 
+def supabase_storage_ping() -> bool:
+    """Return True if the storage API is reachable. Used by the readiness probe."""
+    if not is_configured():
+        # Nothing configured: treat as healthy so /readyz does not block deploys.
+        return True
+    try:
+        url = (
+            f"{settings.SUPABASE_URL}/storage/v1/bucket/"
+            f"{settings.SUPABASE_STORAGE_BUCKET}"
+        )
+        res = requests.get(url, headers=_headers(), timeout=10)
+        return res.status_code in (200, 404)  # 404 = bucket listing endpoint differs
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Supabase storage ping failed: %s", exc)
+        return False
+
+
 def upload_document(path: str, data: bytes, content_type: str) -> str | None:
     """Upload bytes to the configured bucket. Returns the storage path or None."""
     if not is_configured():

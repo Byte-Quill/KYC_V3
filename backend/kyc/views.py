@@ -1,6 +1,7 @@
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
+import logging
 import os
 from rest_framework import generics, status, viewsets
 from rest_framework.decorators import action
@@ -8,7 +9,6 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
-from rest_framework_simplejwt.views import TokenObtainPairView
 
 from . import supabase_client
 from .models import AuditLog, Document, KYCApplication
@@ -16,23 +16,16 @@ from .permissions import IsOwnerOrReviewer, IsReviewer
 from .serializers import (
     AuditLogSerializer,
     DocumentSerializer,
-    EmailTokenObtainPairSerializer,
     KYCApplicationSerializer,
     RegisterSerializer,
     ReviewSerializer,
     UserSerializer,
 )
 from .services import log_action
-from .throttles import LoginThrottle, RegisterThrottle
+from .throttles import RegisterThrottle, WriteThrottle
 
 User = get_user_model()
-
-
-class EmailTokenObtainPairView(TokenObtainPairView):
-    """JWT token view that accepts email/password credentials."""
-
-    serializer_class = EmailTokenObtainPairSerializer
-    throttle_classes = [LoginThrottle]
+logger = logging.getLogger("kyc")
 
 
 class RegisterView(generics.CreateAPIView):
@@ -53,6 +46,20 @@ class KYCApplicationViewSet(viewsets.ModelViewSet):
     serializer_class = KYCApplicationSerializer
     permission_classes = (IsAuthenticated, IsOwnerOrReviewer)
     http_method_names = ["get", "post", "patch", "head", "options"]
+
+    # User-scoped write throttles keyed by DRF action name.
+    THROTTLE_SCOPES = {
+        "submit": "submit",
+        "documents": "documents",
+        "review": "review",
+    }
+
+    def get_throttles(self):
+        scope = self.THROTTLE_SCOPES.get(self.action)
+        if scope:
+            self.throttle_scope = scope
+            return [WriteThrottle()]
+        return super().get_throttles()
 
     def get_queryset(self):
         qs = KYCApplication.objects.select_related("applicant", "reviewer").prefetch_related("documents")
@@ -91,7 +98,11 @@ class KYCApplicationViewSet(viewsets.ModelViewSet):
             log_action(application, request.user, AuditLog.Action.SUBMITTED)
         return Response(self.get_serializer(application).data)
 
-    @action(detail=True, methods=["post"], parser_classes=(MultiPartParser, FormParser))
+    @action(
+        detail=True,
+        methods=["post"],
+        parser_classes=(MultiPartParser, FormParser),
+    )
     def documents(self, request, pk=None):
         application = self.get_object()
         if application.applicant_id != request.user.id:
@@ -121,10 +132,10 @@ class KYCApplicationViewSet(viewsets.ModelViewSet):
             raise ValidationError(exc.message_dict if hasattr(exc, "message_dict") else exc.messages)
         document.save()
 
-        # Mirror the file to Supabase Storage when configured. The local copy
-        # remains the source of truth for the FileField; Supabase provides the
-        # durable, CDN-backed copy and signed URLs. The storage key never
-        # contains the user-supplied filename.
+        # Mirror the file to Supabase Storage when configured. In production the
+        # local copy is NOT served (WhiteNoise only serves static files), so a
+        # failed mirror means the document is unreachable: fail loudly and roll
+        # back rather than report a success that nobody can see.
         if supabase_client.is_configured():
             file_obj.seek(0)
             ext = os.path.splitext(file_obj.name)[1].lower()
@@ -132,9 +143,17 @@ class KYCApplicationViewSet(viewsets.ModelViewSet):
             uploaded = supabase_client.upload_document(
                 storage_path, file_obj.read(), file_obj.content_type or "application/octet-stream"
             )
-            if uploaded:
-                document.storage_path = uploaded
-                document.save(update_fields=["storage_path"])
+            if not uploaded:
+                document.delete()  # removes the FileField copy from disk too
+                logger.error(
+                    "Document upload failed: Supabase mirror unavailable (application=%s)", application.id
+                )
+                return Response(
+                    {"detail": "Document storage is temporarily unavailable. Please retry."},
+                    status=status.HTTP_502_BAD_GATEWAY,
+                )
+            document.storage_path = uploaded
+            document.save(update_fields=["storage_path"])
 
         log_action(
             application,
@@ -144,7 +163,11 @@ class KYCApplicationViewSet(viewsets.ModelViewSet):
         )
         return Response(DocumentSerializer(document).data, status=status.HTTP_201_CREATED)
 
-    @action(detail=True, methods=["post"], permission_classes=(IsAuthenticated, IsReviewer))
+    @action(
+        detail=True,
+        methods=["post"],
+        permission_classes=(IsAuthenticated, IsReviewer),
+    )
     def review(self, request, pk=None):
         serializer = ReviewSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -169,7 +192,11 @@ class KYCApplicationViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["get"])
     def audit(self, request, pk=None):
         application = self.get_object()
-        logs = application.audit_logs.select_related("actor")
+        logs = application.audit_logs.select_related("actor").order_by("-created_at")
+        page = self.paginate_queryset(logs)
+        if page is not None:
+            serializer = AuditLogSerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
         return Response(AuditLogSerializer(logs, many=True).data)
 
 

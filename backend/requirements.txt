@@ -9,3 +9,4 @@ requests>=2.34,<3.0
 psycopg2-binary>=2.9.12,<3.0
 dj-database-url>=3.1,<4.0
 python-dotenv>=1.2,<2.0
+python-json-logger>=3.3,<4.0
