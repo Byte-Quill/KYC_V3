@@ -61,6 +61,13 @@ class KYCApplicationViewSet(viewsets.ModelViewSet):
             return [WriteThrottle()]
         return super().get_throttles()
 
+    def get_serializer_context(self):
+        # List views only need document metadata (e.g. doc count); generating
+        # signed URLs is a Supabase network round-trip per document, so skip it.
+        context = super().get_serializer_context()
+        context["include_signed_url"] = self.action != "list"
+        return context
+
     def get_queryset(self):
         qs = KYCApplication.objects.select_related("applicant", "reviewer").prefetch_related("documents")
         user = self.request.user

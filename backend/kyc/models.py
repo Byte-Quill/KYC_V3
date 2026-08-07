@@ -136,6 +136,8 @@ class KYCApplication(models.Model):
         ordering = ["-created_at"]
         indexes = [
             models.Index(fields=["applicant", "status"], name="kyc_app_applicant_status_idx"),
+            # Review queue: status-filtered list ordered by -created_at.
+            models.Index(fields=["status", "-created_at"], name="kyc_app_status_created_idx"),
         ]
 
     def __str__(self):

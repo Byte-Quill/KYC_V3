@@ -1,19 +1,25 @@
-import type { ReactNode } from "react";
+import { lazy, Suspense, type ReactNode } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 
 import { AuthProvider, useAuth } from "./auth";
 import Layout from "./components/Layout";
-import ApplicationDetailPage from "./pages/ApplicationDetailPage";
-import ApplicationFormPage from "./pages/ApplicationFormPage";
-import DashboardPage from "./pages/DashboardPage";
-import LoginPage from "./pages/LoginPage";
-import RegisterPage from "./pages/RegisterPage";
-import ReviewDetailPage from "./pages/ReviewDetailPage";
-import ReviewQueuePage from "./pages/ReviewQueuePage";
+
+// Route-level code splitting: pages load on demand instead of one big bundle.
+const ApplicationDetailPage = lazy(() => import("./pages/ApplicationDetailPage"));
+const ApplicationFormPage = lazy(() => import("./pages/ApplicationFormPage"));
+const DashboardPage = lazy(() => import("./pages/DashboardPage"));
+const LoginPage = lazy(() => import("./pages/LoginPage"));
+const RegisterPage = lazy(() => import("./pages/RegisterPage"));
+const ReviewDetailPage = lazy(() => import("./pages/ReviewDetailPage"));
+const ReviewQueuePage = lazy(() => import("./pages/ReviewQueuePage"));
+
+function PageLoader() {
+  return <p className="p-8 text-center text-slate-500">Loading…</p>;
+}
 
 function Protected({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
-  if (loading) return <p className="p-8 text-center text-slate-500">Loading…</p>;
+  if (loading) return <PageLoader />;
   if (!user) return <Navigate to="/login" replace />;
   return <>{children}</>;
 }
@@ -29,7 +35,8 @@ function ReviewerOnly({ children }: { children: ReactNode }) {
 export default function App() {
   return (
     <AuthProvider>
-      <Routes>
+      <Suspense fallback={<PageLoader />}>
+        <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route
@@ -60,7 +67,8 @@ export default function App() {
           />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+        </Routes>
+      </Suspense>
     </AuthProvider>
   );
 }

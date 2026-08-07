@@ -51,6 +51,10 @@ class DocumentSerializer(serializers.ModelSerializer):
         read_only_fields = ("id", "uploaded_at")
 
     def get_file(self, obj):
+        # List serialization (review queue, dashboard) only needs metadata —
+        # skip the Supabase signed-URL round-trip entirely.
+        if not self.context.get("include_signed_url", True):
+            return None
         if obj.storage_path:
             from kyc.supabase_client import create_signed_url
             url = create_signed_url(obj.storage_path)
