@@ -108,7 +108,6 @@ class ApplicationFlowTests(APITestCase):
         self.auth(self.applicant)
         app_id = self.create_app()
 
-        # cannot submit without documents
         res = self.client.post(f"/api/applications/{app_id}/submit/")
         self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
 
@@ -119,17 +118,14 @@ class ApplicationFlowTests(APITestCase):
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         self.assertEqual(res.data["status"], "submitted")
 
-        # applicant cannot review their own application
         res = self.client.post(f"/api/applications/{app_id}/review/", {"decision": "approve"})
         self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
 
-        # reviewer approves
         self.auth(self.reviewer)
         res = self.client.post(f"/api/applications/{app_id}/review/", {"decision": "approve"})
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         self.assertEqual(res.data["status"], "approved")
 
-        # audit trail recorded every step
         res = self.client.get(f"/api/applications/{app_id}/audit/")
         actions = [entry["action"] for entry in res.data]
         self.assertEqual(

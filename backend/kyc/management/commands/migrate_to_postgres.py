@@ -31,7 +31,6 @@ class Command(BaseCommand):
         if not sqlite_path.exists():
             raise CommandError(f"SQLite file not found: {sqlite_path}")
 
-        # Register a temporary SQLite connection pointing at the source file.
         from django.conf import settings
         from django.db import connections
 
@@ -49,7 +48,6 @@ class Command(BaseCommand):
             if not objects:
                 continue
             data = serializers.serialize("json", objects)
-            # loaddata-style deserialize into the default (Postgres) connection
             for obj in serializers.deserialize("json", data):
                 obj.save(using="default")
             total += len(objects)

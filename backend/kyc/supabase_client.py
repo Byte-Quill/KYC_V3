@@ -24,8 +24,6 @@ def _headers() -> dict[str, str]:
     }
 
 
-# ---- Storage ----
-
 def upload_document(path: str, data: bytes, content_type: str) -> str | None:
     """Upload bytes to the configured bucket. Returns the storage path or None."""
     if not is_configured():

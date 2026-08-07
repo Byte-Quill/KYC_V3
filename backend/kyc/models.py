@@ -4,11 +4,12 @@ import uuid
 from django.conf import settings
 from django.contrib.auth.models import AbstractUser
 from django.core.exceptions import ValidationError
+from django.core.files.uploadedfile import UploadedFile
 from django.db import models
 from django.utils import timezone
 
 
-def validate_file_content(file_obj):
+def validate_file_content(file_obj: UploadedFile):
     """Validate the file's content matches its extension (magic-byte sniff).
 
     Extension checks alone are bypassed by renaming an executable to .pdf.
@@ -85,13 +86,11 @@ class KYCApplication(models.Model):
         max_length=30, choices=Status.choices, default=Status.DRAFT, db_index=True
     )
 
-    # Personal information
     full_name = models.CharField(max_length=255)
     date_of_birth = models.DateField()
     nationality = models.CharField(max_length=100)
     phone = models.CharField(max_length=30)
 
-    # Address
     address_line1 = models.CharField(max_length=255)
     address_line2 = models.CharField(max_length=255, blank=True)
     city = models.CharField(max_length=100)
@@ -99,12 +98,10 @@ class KYCApplication(models.Model):
     postal_code = models.CharField(max_length=20)
     country = models.CharField(max_length=100)
 
-    # Identity document
     id_type = models.CharField(max_length=30, choices=IDType.choices)
     id_number = models.CharField(max_length=100)
     id_expiry = models.DateField(null=True, blank=True)
 
-    # Review metadata
     reviewer = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -128,17 +125,15 @@ class KYCApplication(models.Model):
     def __str__(self):
         return f"KYC {self.id} — {self.full_name} [{self.status}]"
 
-    # ---- state machine helpers ----
     def submit(self):
         # Note: callers must fetch this row via select_for_update() inside a
         # transaction so concurrent submits cannot both pass the status check.
-        if self.status not in (self.Status.DRAFT, self.Status.RESUBMISSION_REQUESTED):
-            raise ValidationError("Only draft or resubmission-requested applications can be submitted.")
+        if self.status not in (self.Status.DRAFT, self.Status.RESUBMISSION_REQUESTED):            raise ValidationError("Only draft or resubmission-requested applications can be submitted.")
         self.status = self.Status.SUBMITTED
         self.submitted_at = timezone.now()
         self.save(update_fields=["status", "submitted_at", "updated_at"])
 
-    def apply_review(self, *, reviewer, decision, notes=""):
+    def apply_review(self, *, reviewer: User, decision: str, notes: str = ""):
         """Apply a reviewer decision and record audit metadata."""
         # Note: callers must fetch this row via select_for_update() inside a
         # transaction so two concurrent reviews cannot both pass the check.
@@ -160,7 +155,7 @@ class KYCApplication(models.Model):
         )
 
 
-def document_upload_path(instance, filename):
+def document_upload_path(instance: "Document", filename: str):
     ext = os.path.splitext(filename)[1].lower()
     return f"documents/{instance.application_id}/{uuid.uuid4().hex}{ext}"
 
@@ -232,4 +227,5 @@ class AuditLog(models.Model):
         ordering = ["-created_at"]
 
     def __str__(self):
-        return f"{self.action} on {self.application_id} by {self.actor}"
+        # application_id is the FK column name; Pylance only knows the `application` field.
+        return f"{self.action} on {self.application_id} by {self.actor}"  # type: ignore[reportUnknownMemberType, reportAttributeAccessIssue]

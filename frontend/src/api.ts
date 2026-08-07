@@ -82,7 +82,6 @@ async function request<T>(
   return res.json();
 }
 
-// ---- auth ----
 export const login = (email: string, password: string) =>
   request<{ access: string; refresh: string }>("/auth/token/", {
     method: "POST",
@@ -100,7 +99,6 @@ export const register = (payload: {
 
 export const fetchMe = () => request<User>("/auth/me/");
 
-// ---- applications ----
 export const listApplications = (page = 1) =>
   request<Page<KYCApplication>>(`/applications/?page=${page}`);
 export const getApplication = (id: string) => request<KYCApplication>(`/applications/${id}/`);
