@@ -146,7 +146,10 @@ class KYCApplication(models.Model):
     def submit(self):
         # Note: callers must fetch this row via select_for_update() inside a
         # transaction so concurrent submits cannot both pass the status check.
-        if self.status not in (self.Status.DRAFT, self.Status.RESUBMISSION_REQUESTED):            raise ValidationError("Only draft or resubmission-requested applications can be submitted.")
+        if self.status not in (self.Status.DRAFT, self.Status.RESUBMISSION_REQUESTED):
+            raise ValidationError(
+                "Only draft or resubmission-requested applications can be submitted."
+            )
         self.status = self.Status.SUBMITTED
         self.submitted_at = timezone.now()
         self.save(update_fields=["status", "submitted_at", "updated_at"])

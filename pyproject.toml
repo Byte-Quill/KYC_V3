@@ -1,0 +1,33 @@
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+src = ["backend"]
+exclude = ["backend/kyc/migrations"]
+
+[tool.ruff.lint]
+ignore = [
+    "RUF012",  # Mutable default values - common in Django migrations and admin
+    "SIM102",  # Nested if statements - sometimes clearer
+    "T201",    # print statements - allowed in management commands
+]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+]
+
+[tool.ruff.lint.per-file-ignores]
+"backend/kyc/admin.py" = ["RUF012"]
+"backend/kyc/auth_views.py" = ["RUF012"]
+"backend/kyc/views.py" = ["RUF012", "E501", "B904"]
+"backend/kyc/serializers.py" = ["RUF012"]
+"backend/kyc/tests.py" = ["S101", "T201"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "lf"

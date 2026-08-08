@@ -1,12 +1,10 @@
-from datetime import date
-
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from .models import AuditLog, Document, KYCApplication
+from .models import Document
 
 User = get_user_model()
 
@@ -56,7 +54,10 @@ class AuthTests(APITestCase):
                 "/api/auth/token/",
                 {"email": "unknown@kyc.local", "password": "wrong-password"},
             )
-            self.assertIn(res.status_code, (status.HTTP_401_UNAUTHORIZED, status.HTTP_429_TOO_MANY_REQUESTS))
+            self.assertIn(
+                res.status_code,
+                (status.HTTP_401_UNAUTHORIZED, status.HTTP_429_TOO_MANY_REQUESTS),
+            )
 
         res = self.client.post(
             "/api/auth/token/",
@@ -70,7 +71,10 @@ class AuthTests(APITestCase):
                 "/api/auth/register/",
                 {"email": f"spam{i}@kyc.local", "username": f"spam{i}", "password": "Str0ngPass!"},
             )
-            self.assertIn(res.status_code, (status.HTTP_201_CREATED, status.HTTP_429_TOO_MANY_REQUESTS))
+            self.assertIn(
+                res.status_code,
+                (status.HTTP_201_CREATED, status.HTTP_429_TOO_MANY_REQUESTS),
+            )
         res = self.client.post(
             "/api/auth/register/",
             {"email": "spam6@kyc.local", "username": "spam6", "password": "Str0ngPass!"},
@@ -302,7 +306,9 @@ class ApplicationFlowTests(APITestCase):
         """An executable renamed to .pdf must be rejected by content sniffing."""
         self.auth(self.applicant)
         app_id = self.create_app()
-        file = SimpleUploadedFile("fake.pdf", b"MZ\x90\x00 executable", content_type="application/pdf")
+        file = SimpleUploadedFile(
+            "fake.pdf", b"MZ\x90\x00 executable", content_type="application/pdf"
+        )
         res = self.client.post(
             f"/api/applications/{app_id}/documents/",
             {"doc_type": "id_proof", "file": file},
@@ -313,7 +319,9 @@ class ApplicationFlowTests(APITestCase):
     def test_oversized_upload_rejected(self):
         self.auth(self.applicant)
         app_id = self.create_app()
-        big = SimpleUploadedFile("big.pdf", b"%PDF-1.4 " + b"0" * (6 * 1024 * 1024), content_type="application/pdf")
+        big = SimpleUploadedFile(
+            "big.pdf", b"%PDF-1.4 " + b"0" * (6 * 1024 * 1024), content_type="application/pdf"
+        )
         res = self.client.post(
             f"/api/applications/{app_id}/documents/",
             {"doc_type": "id_proof", "file": big},

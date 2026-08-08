@@ -6,7 +6,8 @@ lightweight. All helpers degrade to no-ops when Supabase is unconfigured.
 """
 import logging
 import time
-from typing import Callable, TypeVar
+from collections.abc import Callable
+from typing import TypeVar
 
 import requests
 from django.conf import settings
@@ -20,14 +21,12 @@ _MAX_RETRIES = 2
 _BASE_BACKOFF = 0.5  # seconds
 
 
-def _retry_idempotent(func: Callable[[], T], operation: str) -> T | None:
+def _retry_idempotent[T](func: Callable[[], T], operation: str) -> T | None:
     """Execute an idempotent operation with exponential backoff retries."""
-    last_exc: Exception | None = None
     for attempt in range(_MAX_RETRIES + 1):
         try:
             return func()
         except Exception as exc:  # noqa: BLE001
-            last_exc = exc
             if attempt < _MAX_RETRIES:
                 backoff = _BASE_BACKOFF * (2**attempt)
                 logger.warning(
