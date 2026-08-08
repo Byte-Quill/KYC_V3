@@ -260,6 +260,43 @@ class ApplicationFlowTests(APITestCase):
         )
         self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_remove_document(self):
+        self.auth(self.applicant)
+        app_id = self.create_app()
+        res = self.upload_doc(app_id)
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        doc_id = res.data["id"]
+
+        # Only removable while editable, and only by the owner.
+        self.client.post(f"/api/applications/{app_id}/submit/")
+        res = self.client.delete(f"/api/applications/{app_id}/documents/{doc_id}/")
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # Non-owner gets 404: the queryset is owner-scoped, so the app is
+        # invisible to them (no existence leak).
+        self.auth(self.other)
+        res = self.client.delete(f"/api/applications/{app_id}/documents/{doc_id}/")
+        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+
+        # Owner removes it from a draft and it is logged.
+        self.auth(self.applicant)
+        app_id = self.create_app()
+        res = self.upload_doc(app_id)
+        doc_id = res.data["id"]
+        res = self.client.delete(f"/api/applications/{app_id}/documents/{doc_id}/")
+        self.assertEqual(res.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertEqual(
+            Document.objects.filter(pk=doc_id).exists(),
+            False,
+        )
+        res = self.client.get(f"/api/applications/{app_id}/audit/")
+        actions = [entry["action"] for entry in res.data["results"]]
+        self.assertEqual(actions[0], "document_removed")
+
+        # Unknown document id -> 404.
+        res = self.client.delete(f"/api/applications/{app_id}/documents/does-not-exist/")
+        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+
     def test_content_mismatch_rejected(self):
         """An executable renamed to .pdf must be rejected by content sniffing."""
         self.auth(self.applicant)

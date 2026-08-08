@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 
 import * as api from "../api";
 import { useAuth } from "../auth";
+import Pagination from "../components/Pagination";
 import StatusBadge from "../components/StatusBadge";
 import type { AuditEntry, KYCApplication } from "../types";
 
@@ -17,6 +18,10 @@ export default function ApplicationDetailPage() {
   const { user } = useAuth();
   const [app, setApp] = useState<KYCApplication | null>(null);
   const [audit, setAudit] = useState<AuditEntry[]>([]);
+  const [auditCount, setAuditCount] = useState(0);
+  const [auditHasNext, setAuditHasNext] = useState(false);
+  const [auditHasPrev, setAuditHasPrev] = useState(false);
+  const [auditPage, setAuditPage] = useState(1);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [docType, setDocType] = useState("id_proof");
@@ -26,20 +31,42 @@ export default function ApplicationDetailPage() {
   const load = useCallback(async () => {
     if (!id) return;
     try {
-      const [application, trail] = await Promise.all([
-        api.getApplication(id),
-        api.fetchAudit(id),
-      ]);
+      const application = await api.getApplication(id);
       setApp(application);
-      setAudit(trail.results);
     } catch {
       setError("Failed to load application.");
     }
   }, [id]);
 
+  const loadAudit = useCallback(
+    async (pageNum: number) => {
+      if (!id) return;
+      try {
+        const trail = await api.fetchAudit(id, pageNum);
+        setAudit(trail.results);
+        setAuditCount(trail.count);
+        setAuditHasNext(!!trail.next);
+        setAuditHasPrev(!!trail.previous);
+      } catch {
+        setError("Failed to load audit trail.");
+      }
+    },
+    [id]
+  );
+
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    setAuditPage(1);
+    loadAudit(1);
+  }, [loadAudit]);
+
+  useEffect(() => {
+    if (auditPage === 1) return; // already loaded above
+    loadAudit(auditPage);
+  }, [auditPage, loadAudit]);
 
   if (error) return <p className="text-red-600">{error}</p>;
   if (!app) return <p className="text-slate-500">Loading…</p>;
@@ -78,6 +105,25 @@ export default function ApplicationDetailPage() {
     } catch (err) {
       setNotice(
         err instanceof api.ApiError ? `Submit failed: ${JSON.stringify(err.body)}` : "Submit failed."
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const removeDoc = async (docId: string) => {
+    if (!id) return;
+    setBusy(true);
+    setNotice("");
+    try {
+      await api.deleteDocument(id, docId);
+      setNotice("Document removed.");
+      await Promise.all([load(), loadAudit(auditPage)]);
+    } catch (err) {
+      setNotice(
+        err instanceof api.ApiError
+          ? `Remove failed: ${JSON.stringify(err.body)}`
+          : "Remove failed."
       );
     } finally {
       setBusy(false);
@@ -168,8 +214,19 @@ export default function ApplicationDetailPage() {
                     {doc.original_filename}
                   </a>
                 </span>
-                <span className="text-slate-400">
-                  {new Date(doc.uploaded_at).toLocaleDateString()}
+                <span className="flex items-center gap-3">
+                  <span className="text-slate-400">
+                    {new Date(doc.uploaded_at).toLocaleDateString()}
+                  </span>
+                  {editable && isOwner && (
+                    <button
+                      onClick={() => void removeDoc(doc.id)}
+                      disabled={busy}
+                      className="text-xs font-medium text-red-600 hover:underline disabled:opacity-50"
+                    >
+                      Remove
+                    </button>
+                  )}
                 </span>
               </li>
             ))}
@@ -239,6 +296,15 @@ export default function ApplicationDetailPage() {
             </li>
           ))}
         </ol>
+        <Pagination
+          count={auditCount}
+          pageNum={auditPage}
+          hasNext={auditHasNext}
+          hasPrev={auditHasPrev}
+          loading={false}
+          onPageChange={setAuditPage}
+          label="events"
+        />
       </section>
     </div>
   );

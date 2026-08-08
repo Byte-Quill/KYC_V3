@@ -223,6 +223,7 @@ class AuditLog(models.Model):
         UPDATED = "updated", "Updated"
         SUBMITTED = "submitted", "Submitted"
         DOCUMENT_UPLOADED = "document_uploaded", "Document Uploaded"
+        DOCUMENT_REMOVED = "document_removed", "Document Removed"
         APPROVED = "approved", "Approved"
         REJECTED = "rejected", "Rejected"
         RESUBMISSION_REQUESTED = "resubmission_requested", "Resubmission Requested"

@@ -19,15 +19,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const initializeAuth = async () => {
-      if (!api.isAuthenticated()) {
-        setUser(null);
-        setLoading(false);
-        return;
-      }
-
       try {
-        const currentUser = await api.fetchMe();
-        setUser(currentUser);
+        // Access token lives in memory, so a page reload loses it. Ask the
+        // backend for a fresh one using the HttpOnly refresh cookie; 401
+        // just means "logged out".
+        const refreshed = await api.refreshAccess();
+        if (refreshed) {
+          setUser(await api.fetchMe());
+        }
       } catch {
         api.clearTokens();
         setUser(null);

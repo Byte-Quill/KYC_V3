@@ -94,6 +94,7 @@ export const register = (payload: {
   request<User>("/auth/register/", { method: "POST", body: JSON.stringify(payload) });
 
 export const fetchMe = () => request<User>("/auth/me/");
+export { refreshAccess };
 
 export const logout = () =>
   request<void>("/auth/logout/", {
@@ -118,11 +119,14 @@ export const uploadDocument = (id: string, docType: string, file: File) => {
   const form = new FormData();
   form.append("doc_type", docType);
   form.append("file", file);
-  return request<{ id: string }>(`/applications/${id}/documents/`, {
+  return request<Document>(`/applications/${id}/documents/`, {
     method: "POST",
     body: form,
   });
 };
+
+export const deleteDocument = (id: string, docId: string) =>
+  request<void>(`/applications/${id}/documents/${docId}/`, { method: "DELETE" });
 
 export const reviewApplication = (id: string, decision: string, notes: string) =>
   request<KYCApplication>(`/applications/${id}/review/`, {
@@ -130,6 +134,7 @@ export const reviewApplication = (id: string, decision: string, notes: string) =
     body: JSON.stringify({ decision, notes }),
   });
 
-export const fetchAudit = (id: string) => request<Page<AuditEntry>>(`/applications/${id}/audit/`);
+export const fetchAudit = (id: string, page = 1) =>
+  request<Page<AuditEntry>>(`/applications/${id}/audit/?page=${page}`);
 export const fetchReviewQueue = (page = 1) =>
   request<Page<KYCApplication>>(`/review-queue/?page=${page}`);

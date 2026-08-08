@@ -61,6 +61,23 @@ def upload_document(path: str, data: bytes, content_type: str) -> str | None:
         return None
 
 
+def delete_document(path: str) -> bool:
+    """Delete an object from the configured bucket. Returns True on success."""
+    if not is_configured():
+        return False
+    try:
+        url = (
+            f"{settings.SUPABASE_URL}/storage/v1/object/"
+            f"{settings.SUPABASE_STORAGE_BUCKET}/{path}"
+        )
+        res = requests.delete(url, headers=_headers(), timeout=30)
+        res.raise_for_status()
+        return True
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Supabase storage delete failed: %s", exc)
+        return False
+
+
 def create_signed_url(path: str, expires_in: int = 3600) -> str | None:
     """Return a time-limited signed URL for a private object."""
     if not is_configured():

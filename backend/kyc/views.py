@@ -5,7 +5,7 @@ import logging
 import os
 from rest_framework import generics, status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -45,7 +45,12 @@ class MeView(generics.RetrieveAPIView):
 class KYCApplicationViewSet(viewsets.ModelViewSet):
     serializer_class = KYCApplicationSerializer
     permission_classes = (IsAuthenticated, IsOwnerOrReviewer)
-    http_method_names = ["get", "post", "patch", "head", "options"]
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
+
+    def destroy(self, request, *args, **kwargs):
+        # Application deletion is not part of the KYC flow; DELETE is only
+        # used by the dedicated document-removal action.
+        return Response(status=status.HTTP_405_METHOD_NOT_ALLOWED)
 
     # User-scoped write throttles keyed by DRF action name.
     THROTTLE_SCOPES = {
@@ -170,6 +175,51 @@ class KYCApplicationViewSet(viewsets.ModelViewSet):
         )
         return Response(DocumentSerializer(document).data, status=status.HTTP_201_CREATED)
 
+    @action(detail=True, methods=["delete"], url_path=r"documents/(?P<doc_id>[^/.]+)")
+    def remove_document(self, request, pk=None, doc_id=None):
+        """Remove one document while the application is still editable.
+
+        The Supabase mirror is deleted first; on failure the local row is kept
+        so a half-deleted document never leaves a dangling DB record.
+        """
+        application = self.get_object()
+        if application.applicant_id != request.user.id:
+            raise ValidationError("Only the applicant can remove documents.")
+        if application.status not in (
+            KYCApplication.Status.DRAFT,
+            KYCApplication.Status.RESUBMISSION_REQUESTED,
+        ):
+            raise ValidationError("Documents can only be removed while the application is editable.")
+
+        try:
+            document = application.documents.get(pk=doc_id)
+        except (Document.DoesNotExist, ValueError, DjangoValidationError):
+            # ValueError/ValidationError: malformed UUID in the URL -> 404, never 500.
+            raise NotFound("Document not found.")
+
+        if supabase_client.is_configured() and document.storage_path:
+            if not supabase_client.delete_document(document.storage_path):
+                logger.error(
+                    "Document removal failed: Supabase delete unavailable (application=%s, doc=%s)",
+                    application.id,
+                    document.id,
+                )
+                return Response(
+                    {"detail": "Document storage is temporarily unavailable. Please retry."},
+                    status=status.HTTP_502_BAD_GATEWAY,
+                )
+
+        doc_type = document.doc_type
+        original_filename = document.original_filename
+        document.delete()  # removes the FileField copy from disk too
+        log_action(
+            application,
+            request.user,
+            AuditLog.Action.DOCUMENT_REMOVED,
+            detail=f"{doc_type}: {original_filename}",
+        )
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
     @action(
         detail=True,
         methods=["post"],
@@ -201,10 +251,8 @@ class KYCApplicationViewSet(viewsets.ModelViewSet):
         application = self.get_object()
         logs = application.audit_logs.select_related("actor").order_by("-created_at")
         page = self.paginate_queryset(logs)
-        if page is not None:
-            serializer = AuditLogSerializer(page, many=True)
-            return self.get_paginated_response(serializer.data)
-        return Response(AuditLogSerializer(logs, many=True).data)
+        serializer = AuditLogSerializer(page, many=True)
+        return self.get_paginated_response(serializer.data)
 
 
 class ReviewQueueView(generics.ListAPIView):
@@ -212,6 +260,13 @@ class ReviewQueueView(generics.ListAPIView):
 
     serializer_class = KYCApplicationSerializer
     permission_classes = (IsAuthenticated, IsReviewer)
+
+    def get_serializer_context(self):
+        # Queue rows only need document metadata (doc count); skip the
+        # per-document Supabase signed-URL round-trip like the list views.
+        context = super().get_serializer_context()
+        context["include_signed_url"] = False
+        return context
 
     def get_queryset(self):
         return (
