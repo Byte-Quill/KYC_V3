@@ -46,7 +46,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(() => {
     // Best-effort server-side blacklist + cookie clear; always clear locally.
-    void api.logout().catch(() => {});
+    void api.logout().catch((err) => {
+      console.error("Logout blacklist failed:", err);
+    });
     api.clearTokens();
     setUser(null);
   }, []);

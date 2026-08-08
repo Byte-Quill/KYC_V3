@@ -237,7 +237,8 @@ class ApplicationFlowTests(APITestCase):
             f"/api/applications/{app_id}/",
             {"full_name": "Tampered Name"},
         )
-        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        # Permission layer now blocks reviewers from any write operations
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_review_queue_only_for_reviewers(self):
         self.auth(self.applicant)

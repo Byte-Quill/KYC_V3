@@ -29,7 +29,9 @@ class WriteThrottle(ScopedRateThrottle):
     """User-scoped throttle for state-changing endpoints (uploads, submit, review)."""
 
     def get_cache_key(self, request, view):
-        if not request.user or not request.user.is_authenticated:
-            return None
-        # Key per user, not per IP: NAT/proxy users should not be pooled.
-        return f"write-throttle:{request.user.pk}:{self.scope}"
+        if request.user and request.user.is_authenticated:
+            # Key per user, not per IP: NAT/proxy users should not be pooled.
+            return f"write-throttle:{request.user.pk}:{self.scope}"
+        # Anonymous fallback: throttle by IP to prevent unauthenticated DoS.
+        ident = self.get_ident(request)
+        return f"write-throttle:anon:{ident}:{self.scope}"

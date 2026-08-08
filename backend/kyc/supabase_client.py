@@ -5,11 +5,43 @@ Uses the service-role key directly instead of the full `supabase` SDK
 lightweight. All helpers degrade to no-ops when Supabase is unconfigured.
 """
 import logging
+import time
+from typing import Callable, TypeVar
 
 import requests
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
+
+# Retry configuration for idempotent Supabase operations
+_MAX_RETRIES = 2
+_BASE_BACKOFF = 0.5  # seconds
+
+
+def _retry_idempotent(func: Callable[[], T], operation: str) -> T | None:
+    """Execute an idempotent operation with exponential backoff retries."""
+    last_exc: Exception | None = None
+    for attempt in range(_MAX_RETRIES + 1):
+        try:
+            return func()
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            if attempt < _MAX_RETRIES:
+                backoff = _BASE_BACKOFF * (2**attempt)
+                logger.warning(
+                    "%s failed (attempt %d/%d), retrying in %.1fs: %s",
+                    operation,
+                    attempt + 1,
+                    _MAX_RETRIES + 1,
+                    backoff,
+                    exc,
+                )
+                time.sleep(backoff)
+            else:
+                logger.error("%s failed after %d attempts: %s", operation, _MAX_RETRIES + 1, exc)
+    return None
 
 
 def is_configured() -> bool:
@@ -45,7 +77,8 @@ def upload_document(path: str, data: bytes, content_type: str) -> str | None:
     """Upload bytes to the configured bucket. Returns the storage path or None."""
     if not is_configured():
         return None
-    try:
+
+    def _do_upload() -> str:
         url = (
             f"{settings.SUPABASE_URL}/storage/v1/object/"
             f"{settings.SUPABASE_STORAGE_BUCKET}/{path}"
@@ -56,16 +89,16 @@ def upload_document(path: str, data: bytes, content_type: str) -> str | None:
         res = requests.post(url, data=data, headers=headers, timeout=30)
         res.raise_for_status()
         return path
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Supabase storage upload failed: %s", exc)
-        return None
+
+    return _retry_idempotent(_do_upload, "Supabase storage upload")
 
 
 def delete_document(path: str) -> bool:
     """Delete an object from the configured bucket. Returns True on success."""
     if not is_configured():
         return False
-    try:
+
+    def _do_delete() -> bool:
         url = (
             f"{settings.SUPABASE_URL}/storage/v1/object/"
             f"{settings.SUPABASE_STORAGE_BUCKET}/{path}"
@@ -73,9 +106,9 @@ def delete_document(path: str) -> bool:
         res = requests.delete(url, headers=_headers(), timeout=30)
         res.raise_for_status()
         return True
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Supabase storage delete failed: %s", exc)
-        return False
+
+    result = _retry_idempotent(_do_delete, "Supabase storage delete")
+    return result is True
 
 
 def create_signed_url(path: str, expires_in: int = 3600) -> str | None:

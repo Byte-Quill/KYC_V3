@@ -46,6 +46,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
+    "csp.middleware.CSPMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -88,8 +89,13 @@ DATABASES = {
 
 # Rate-limit counters and sessions. In production use Redis so throttling is
 # shared across gunicorn workers/processes (LocMemCache is per-process and
-# gets wiped on restart).
+# gets wiped on restart). Redis is mandatory when DEBUG=false.
 _REDIS_URL = os.environ.get("REDIS_URL", "").strip()
+if not DEBUG and not _REDIS_URL:
+    raise RuntimeError(
+        "REDIS_URL must be set when DJANGO_DEBUG=false. "
+        "Redis is required for shared throttling and token blacklist across workers."
+    )
 if _REDIS_URL:
     CACHES = {
         "default": {
@@ -227,10 +233,26 @@ STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 if not DEBUG:
     SECURE_BROWSER_XSS_FILTER = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
-    X_FRAME_OPTIONS = 'DENY'
+    X_FRAME_OPTIONS = "DENY"
     SECURE_HSTS_SECONDS = 31536000
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
+    SECURE_SSL_REDIRECT = True
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    # Content Security Policy - restrictive but allows inline styles for Tailwind
+    CONTENT_SECURITY_POLICY = {
+        "DEFAULT_SRC": ["'self'"],
+        "SCRIPT_SRC": ["'self'"],
+        "STYLE_SRC": ["'self'", "'unsafe-inline'"],  # Tailwind uses inline styles
+        "IMG_SRC": ["'self'", "data:", "https:"],
+        "FONT_SRC": ["'self'", "data:"],
+        "CONNECT_SRC": ["'self'"],
+        "FRAME_ANCESTORS": ["'none'"],
+        "FORM_ACTION": ["'self'"],
+        "BASE_URI": ["'self'"],
+    }
 
 # Project URL and keys from the Supabase dashboard (Settings > API).
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")

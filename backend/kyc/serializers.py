@@ -125,15 +125,6 @@ class KYCApplicationSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         if not request:
             return attrs
-        if request.user.is_reviewer:
-            # Reviewers are read-only on applicant data; they decide via the
-            # dedicated `review` endpoint, not by patching the application.
-            editable_fields = set(attrs.keys())
-            if editable_fields:
-                raise serializers.ValidationError(
-                    f"Reviewers cannot edit application fields: {sorted(editable_fields)}"
-                )
-            return attrs
         # Applicants may only edit while the application is a draft or needs resubmission
         if self.instance:
             editable = (
